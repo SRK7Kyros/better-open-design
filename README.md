@@ -113,40 +113,52 @@ pnpm --filter @open-design/daemon test  # cors-allowlist, origin-validation
 There is no aggregate `test` script at the root; "run the tests" means the two
 commands above, over 1421 web files (~13.1k cases) and 1062 daemon files
 (~11.8k cases), with `e2e/` (134 files) and the Playwright groups on top. CI
-never runs that as one job: `ci.yml` shards daemon 4× (15 min budget each) and
-web 2× (20 min), and `.github/scripts/scopes.py` / `convergence.py` skip or
-reuse workloads whose paths did not change.
+never runs that as one job: `ci.yml` shards daemon 4× (15 min budget each, on
+`vitest.parallel.config.ts`) and web 2× (20 min), and
+`.github/scripts/scopes.py` / `convergence.py` skip or reuse workloads whose
+paths did not change.
 
 Measured on a 4-core ARM VM (one shard of each, `--shard=1/4`):
 
 | Suite | Files / cases | Wall clock | Full suite |
 |---|---|---|---|
 | `apps/web`, `--maxWorkers=2` | 356 / 3938 | 416 s | ~28 min (4 shards) |
-| `apps/daemon`, serial config | 266 / 4025 | 1142 s, 2 red | ~76 min (4 shards) |
+| `apps/web`, `--maxWorkers=3` | 356 / 3938 | 313 s | ~21 min (4 shards) |
+| `apps/daemon`, `vitest.config.ts` (serial) | 266 / 4025 | 1142 s, 2 red | ~76 min (4 shards) |
 | `apps/daemon`, `vitest.parallel.config.ts`, 3 workers | 266 / 4025 | 485 s shard 1, 322–347 s shards 2–4 | **1491 s ≈ 25 min, all four shards green** |
 
 `apps/daemon` defaults to one file at a time (`fileParallelism: false`) because
 its suites mutate `process.env` / `PATH` and bind real servers. Upstream also
 ships `apps/daemon/vitest.parallel.config.ts`, and
 `.github/actions/configure-ci-parallelism` exports `OD_CI_DAEMON_MAX_WORKERS`
-for it — but nothing has ever passed `-c vitest.parallel.config.ts`, so the fast
-config was unreachable. This fork wires it up:
+for it — but no script or workflow passed `-c vitest.parallel.config.ts`, so
+before this fork the fast config was unreachable while the serial shard (1142 s)
+overran the job's 15-minute budget. This fork wires it up:
 
 ```bash
 pnpm --filter @open-design/daemon test:parallel      # whole suite, parallel
-# or one shard, sized from nproc:
+# or one shard, sized from nproc (CI exports OD_CI_DAEMON_MAX_WORKERS):
 OD_CI_DAEMON_MAX_WORKERS=3 pnpm --filter @open-design/daemon exec vitest \
   run -c vitest.parallel.config.ts --shard=1/4
+
+# web, sharded the way CI does it:
+pnpm --filter @open-design/web exec vitest run -c vitest.config.ts \
+  --maxWorkers=3 --shard=1/4
 ```
 
-The parallel config also removes a flake: serial runs put every file in the same
-worker, so a leftover diagnostics write made `workspace-context-authority-server-wiring`
-fail its `rm` teardown in full-suite runs (green standalone, 13/13). Its teardown
-now restores `prom-client`'s registry and the module cache before touching the
-temp tree, so a lost race can no longer cascade into "a metric ... has already
-been registered" in the next case. All four shards are green under the parallel
-config; the source-side race it papered over — `createDiagnosticsEvidence.close()`
-does not await an in-flight checkpoint write — is still open.
+`test:parallel` self-builds the package closure through `pretest:parallel` for a
+local run; CI keeps the explicit `exec vitest` form so the workspace postinstall
+build is not repeated in each of the four shards.
+
+The parallel config also exposed a real race, fixed at the source: serial runs
+put every file in one worker, so a leftover diagnostics checkpoint could land
+after `workspace-context-authority-server-wiring` removed its temp tree, and the
+failing `rm` cascaded into "a metric ... has already been registered" in the
+next case. `createDiagnosticsEvidence.close()` is now a drain that waits for an
+in-flight checkpoint *and* for a collection that would dirty the snapshot, the
+daemon's shutdown awaits it, and the teardown restores `prom-client`'s registry
+and the module cache before touching the tree. All four shards are green under
+the parallel config.
 
 ## Staying rebaseable
 
