@@ -142,7 +142,10 @@ export function createDiagnosticsEvidence(options: {
 
   async function flush(): Promise<void> {
     if (writing) return writing;
-    if (!dirty || !options.write) return;
+    // `scheduleWrite()` dirties before it checks `closed`, so a close can leave a
+    // pending snapshot behind; starting a fresh write after close would revive
+    // the debounce exactly when the caller believes nothing is in flight.
+    if (!dirty || !options.write || closed) return;
     dirty = false;
     const content = serialize();
     writing = Promise.resolve().then(() => options.write!(content)).then(() => {
@@ -237,10 +240,16 @@ export function createDiagnosticsEvidence(options: {
       if (closed) return;
       context = value ? { ...workspace(value), observedAt: new Date(now()).toISOString() } : null;
     },
-    close(): void {
+    async close(): Promise<void> {
       closed = true;
       if (timer) clearTimeout(timer);
       timer = null;
+      // A collection started before close can settle afterwards and dirty the
+      // snapshot; await it so nothing is still scheduling work when we return.
+      await collecting?.catch(() => undefined);
+      // `flush()` assigns `writing` synchronously, so this sees every write the
+      // debounce already started — including the one the cleared timer fired.
+      await writing?.catch(() => undefined);
     },
   };
 }
@@ -248,10 +257,41 @@ export function createDiagnosticsEvidence(options: {
 export type DiagnosticsEvidence = ReturnType<typeof createDiagnosticsEvidence>;
 let activeEvidence: DiagnosticsEvidence | null = null;
 
-/** Configure once with the daemon's resolved data root; readers never guess it. */
+/**
+ * Configure with the daemon's resolved data root; readers never guess it.
+ *
+ * A re-configuration (a start after a shutdown) drains the previous instance
+ * first, and the replacement's writer is chained behind that drain: both point
+ * at the same two files, so their `mkdir`/`rename` must never overlap.
+ */
 export function configureDiagnosticsEvidence(dataRoot: string): void {
-  activeEvidence?.close();
-  activeEvidence = createDiagnosticsEvidence({ write: createEvidenceCheckpointWriter(dataRoot) });
+  const previous = activeEvidence;
+  activeEvidence = null;
+  const draining = previous ? previous.close() : Promise.resolve();
+  const write = createEvidenceCheckpointWriter(dataRoot);
+  activeEvidence = createDiagnosticsEvidence({
+    write: async (content) => {
+      await draining.catch(() => undefined);
+      await write(content);
+    },
+  });
+}
+
+/**
+ * Stop the active writer and wait for the checkpoint it may be writing.
+ *
+ * Shutdown calls this. The debounce keeps an `unref()`ed timer alive, so without
+ * it a write can land after the process (or a test) removed its data root: the
+ * late `mkdir` re-creates the directory and a concurrent `rm` fails ENOTEMPTY.
+ */
+export async function closeDiagnosticsEvidence(): Promise<void> {
+  const current = activeEvidence;
+  activeEvidence = null;
+  if (!current) return;
+  // Write what the debounce is still holding, then wait for it: `close()` alone
+  // deliberately starts no new I/O, which is what test teardowns want.
+  await current.flush();
+  await current.close();
 }
 
 export function getDiagnosticsEvidence(): DiagnosticsEvidence | null { return activeEvidence; }

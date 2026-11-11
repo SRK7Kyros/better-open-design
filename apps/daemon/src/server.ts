@@ -715,7 +715,7 @@ import { createDiagnosticRunObserver, diagnosticFaultFromApi, diagnosticFaultFro
 import { diagnosticRelayUrl } from './integrations/diagnostic-relay.js';
 import { automaticDiagnosticsConsent, observeAppConfig } from './app-config.js';
 import { observeApiFailures } from './http/api-failure-journal.js';
-import { configureDiagnosticsEvidence } from './services/diagnostics-evidence.js';
+import { closeDiagnosticsEvidence, configureDiagnosticsEvidence } from './services/diagnostics-evidence.js';
 import { beginDaemonHealthSession } from './services/daemon-health.js';
 import { readSqlitePageStats } from './storage/db-inspect.js';
 import {
@@ -3236,6 +3236,9 @@ export async function startServer({
   host = normalizeDaemonBindHost(host);
   let resolvedPort = port;
   let daemonShuttingDown = false;
+  // `shutdown()` closes the diagnostics writer, so a start in the same process
+  // (a restart, or a second server in one test file) has to arm it again.
+  configureDiagnosticsEvidence(RUNTIME_DATA_DIR);
   const extraAllowedOrigins = configuredAllowedOrigins();
   const workspaceAuthorityCacheMode = resolveWorkspaceAuthorityCacheMode(
     process.env.OD_WORKSPACE_AUTHORITY_CACHE_MODE,
@@ -18833,7 +18836,6 @@ export async function startServer({
       daemonHealth?.markCleanShutdown();
       daemonHealth?.stop();
       void messageEventPayloadHeal?.stop();
-      stopEvidenceDelivery();
       clearTerminalTelemetryFallbackTimers();
       amrTerminalReportDelivery.stop();
       telemetry.disposeFatalHandlers();
@@ -18858,7 +18860,7 @@ export async function startServer({
       daemonShutdownPromise = (async () => {
         daemonShuttingDown = true;
         await velaRoutesLifecycle.close();
-        amrTerminalReportDelivery.stop();
+        await amrTerminalReportDelivery.stop();
         clearTerminalTelemetryFallbackTimers();
         const shutdownGraceMs = resolveChatRunShutdownGraceMs();
         await design.runs.shutdownActive({ graceMs: shutdownGraceMs });
@@ -18872,6 +18874,13 @@ export async function startServer({
         await browserSessionService.shutdownActive();
         await telemetry.flushStockTelemetry();
         await design.analytics.shutdown();
+        // Both of these write into the data root after their timers stop, so a
+        // shutdown that only flipped their flags could race a caller removing it.
+        await stopEvidenceDelivery();
+        // Last: nothing product-facing records diagnostics once the runs and
+        // the routes are closed, so this drains the one checkpoint still in
+        // flight and stops the 60 s debounce from re-arming after shutdown.
+        await closeDiagnosticsEvidence();
       })();
       return daemonShutdownPromise;
     };

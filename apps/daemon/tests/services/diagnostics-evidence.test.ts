@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createDiagnosticsEvidence, createEvidenceCheckpointWriter, diagnosticsEvidencePaths } from '../../src/services/diagnostics-evidence.js';
+import {
+  closeDiagnosticsEvidence,
+  configureDiagnosticsEvidence,
+  createDiagnosticsEvidence,
+  createEvidenceCheckpointWriter,
+  diagnosticsEvidencePaths,
+  getDiagnosticsEvidence,
+} from '../../src/services/diagnostics-evidence.js';
 import { collectSystemEnvironment, diagnosticFailureCode, summarizeProxyEnvironment, type SystemEnvironmentSnapshot } from '../../src/services/diagnostics-environment.js';
 
 function environment(): SystemEnvironmentSnapshot {
@@ -12,6 +19,27 @@ function environment(): SystemEnvironmentSnapshot {
 }
 
 afterEach(() => vi.useRealTimers());
+
+describe('the configured writer', () => {
+  it('writes the pending checkpoint before shutdown returns and stays quiet afterwards', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'od-evidence-configured-'));
+    const paths = diagnosticsEvidencePaths(root);
+    try {
+      configureDiagnosticsEvidence(root);
+      const evidence = getDiagnosticsEvidence();
+      expect(evidence).not.toBeNull();
+      evidence!.record({ source: 'workspace-directory', status: 503 });
+
+      await closeDiagnosticsEvidence();
+
+      expect(getDiagnosticsEvidence()).toBeNull();
+      const checkpoint = JSON.parse(await readFile(paths.current, 'utf8')) as { failures: unknown[] };
+      expect(checkpoint.failures).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('bounded diagnostics under repeated failures', () => {
   it('does no collection or disk work for successful workspace observations alone', async () => {
@@ -107,6 +135,31 @@ describe('bounded diagnostics under repeated failures', () => {
       await evidence.flush();
       expect(vi.getTimerCount()).toBe(1);
     } finally { evidence.close(); }
+  });
+
+  it('waits for a checkpoint write that is already in flight when it closes', async () => {
+    let completeWrite!: () => void;
+    let settled = 0;
+    const write = vi.fn(() => new Promise<void>((resolve) => {
+      completeWrite = () => { settled += 1; resolve(); };
+    }));
+    const evidence = createDiagnosticsEvidence({ write });
+    evidence.record({ source: 'workspace-directory', status: 503 });
+    const flushing = evidence.flush();
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledTimes(1);
+
+    // Resolve from outside the drain: close() must wait for the write, and the
+    // writer must not have to depend on a caller that is already gone.
+    setTimeout(completeWrite, 20);
+    await evidence.close();
+
+    expect(settled).toBe(1);
+    await flushing;
+    const records = evidence.snapshot().failures.length;
+    evidence.record({ source: 'workspace-directory', status: 503 });
+    expect(evidence.snapshot().failures.length).toBe(records);
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
   it('bounds retries after collection and disk failures without emitting recursive diagnostics', async () => {

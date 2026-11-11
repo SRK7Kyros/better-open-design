@@ -467,11 +467,14 @@ export function createAmrTerminalReportDeliveryService(input: {
         .catch(() => console.warn('[od] amr_terminal_delivery_background code=unexpected'))
         .finally(schedule);
     },
-    stop() {
+    async stop(): Promise<void> {
       stopped = true;
       controller.abort(new Error('AMR terminal delivery stopped'));
       if (timer) clearTimeout(timer);
       timer = null;
+      // The abort ends the pass, but its result write still belongs to the data
+      // root: a caller that is about to remove that root has to be able to wait.
+      await active?.catch(() => undefined);
     },
     processDue,
   };

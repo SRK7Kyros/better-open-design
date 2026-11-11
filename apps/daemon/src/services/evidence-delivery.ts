@@ -254,14 +254,22 @@ export async function drainEvidence(dataDir: string, fetchImpl?: typeof fetch): 
   });
 }
 
-/** Startup recovery runs outside product requests. Off/observe never open or drain the queue. */
-export function startEvidenceDelivery(dataDir: string): () => void {
+/**
+ * Startup recovery runs outside product requests. Off/observe never open or drain the queue.
+ *
+ * `stop` is a drain, not a flag flip: a pass already talking to the outbox keeps
+ * writing into the data root, so a caller that removes that root (a shutdown, a
+ * test teardown) has to be able to wait for it.
+ */
+export function startEvidenceDelivery(dataDir: string): () => Promise<void> {
   let stopped = false;
+  let active: Promise<void> = Promise.resolve();
   const tick = () => {
-    if (!stopped) void drainEvidence(dataDir).catch(() => console.warn('[evidence-outbox] delivery_pass_failed'));
+    if (stopped) return;
+    active = drainEvidence(dataDir).catch(() => console.warn('[evidence-outbox] delivery_pass_failed'));
   };
   const timer = setInterval(tick, 5000);
   timer.unref();
   tick();
-  return () => { stopped = true; clearInterval(timer); };
+  return async () => { stopped = true; clearInterval(timer); await active; };
 }
