@@ -24,6 +24,7 @@ import { motion } from 'motion/react';
 import type { LibraryAsset } from '@open-design/contracts';
 import { Button } from '@open-design/components';
 import { libraryAssetElementUrl, libraryAssetFigmaUrl, libraryAssetRawUrl } from '../providers/registry';
+import { daemonResourceUrl } from '../runtime/api-origin';
 import { modalOverlay, modalContent } from '../motion';
 import {
   KindIcon,
@@ -86,7 +87,7 @@ function FontSpecimen({ asset, rawUrl }: { asset: LibraryAsset; rawUrl: string }
   return (
     <div className={styles.fontStage}>
       {/* Self-contained @font-face so the specimen works even outside the grid. */}
-      <style>{`@font-face{font-family:"${family}";src:url("${rawUrl}");font-display:swap;}`}</style>
+      <style>{`@font-face{font-family:"${family}";src:url("${daemonResourceUrl(rawUrl)}");font-display:swap;}`}</style>
       <div className={styles.fontSpecimen} style={{ fontFamily: `"${family}", sans-serif` }}>
         <p className={styles.fontHuge}>Ag</p>
         <p className={styles.fontRow}>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p>

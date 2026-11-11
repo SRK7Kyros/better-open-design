@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  daemonResourceUrl,
   installApiOriginRewriter,
   installDaemonSubresourceRewriter,
 } from '../../src/runtime/api-origin';
@@ -28,6 +29,7 @@ afterEach(() => {
     value: NATIVE_SET_ATTRIBUTE,
   });
   delete (Element.prototype as unknown as Record<string, unknown>).__odSubresourceRewriterInstalled;
+  delete (window as unknown as Record<string, unknown>).__odApiOriginInstalled;
 });
 
 describe('daemon subresource rewriter', () => {
@@ -113,5 +115,31 @@ describe('daemon subresource rewriter', () => {
     const image = element('img');
     image.setAttribute('src', '/api/info');
     expect(image.getAttribute('src')).toBe('https://second.example.com/api/info');
+  });
+});
+
+describe('daemonResourceUrl', () => {
+  it('resolves a daemon path for string-only contexts such as CSS url()', () => {
+    const win = window as unknown as Window & typeof globalThis & {
+      __OD_CONFIG__?: { apiBase: string };
+    };
+    win.__OD_CONFIG__ = { apiBase: BASE };
+    expect(installApiOriginRewriter(win)).toBe(BASE);
+
+    expect(daemonResourceUrl('/api/library/assets/a1/raw'))
+      .toBe(`${BASE}/api/library/assets/a1/raw`);
+    expect(daemonResourceUrl('https://fonts.example/x.woff2'))
+      .toBe('https://fonts.example/x.woff2');
+  });
+
+  it('returns the input unchanged when no daemon base is configured', () => {
+    const win = window as unknown as Window & typeof globalThis & {
+      __OD_CONFIG__?: { apiBase: string };
+      __odApiOriginInstalled?: string;
+    };
+    delete win.__OD_CONFIG__;
+    delete win.__odApiOriginInstalled;
+    expect(daemonResourceUrl('/api/library/assets/a1/raw'))
+      .toBe('/api/library/assets/a1/raw');
   });
 });

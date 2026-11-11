@@ -106,6 +106,19 @@ export function rewriteApiUrl(target: string, apiBase: string, currentOrigin?: s
   return `${apiBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
+/**
+ * Resolve a daemon path for the places that need a *string* — a CSS
+ * `url()`, a `@font-face` src, anything the attribute rewriter cannot see.
+ * Returns the input unchanged when no base is configured.
+ */
+export function daemonResourceUrl(target: string): string {
+  if (typeof window === 'undefined') return target;
+  const base = (window as BrowserGlobal & { __odApiOriginInstalled?: string })
+    .__odApiOriginInstalled;
+  if (!base) return target;
+  return rewriteApiUrl(target, base, window.location?.origin);
+}
+
 type BrowserGlobal = Window & typeof globalThis;
 
 /**
@@ -232,6 +245,17 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
     }
     return nativeFetch(input as RequestInfo, init);
   }) as typeof target.fetch;
+
+  // `window.open('/api/…')` is the third URL-taking transport: it opens the tab
+  // itself, so the browser — not our code — resolves the relative path.
+  if (typeof target.open === 'function') {
+    const nativeOpen = target.open.bind(target);
+    target.open = ((url?: string | URL, ...rest: unknown[]) => {
+      const rawUrl = typeof url === 'string' ? url : url?.href;
+      const rewritten = rawUrl ? rewriteApiUrl(rawUrl, apiBase, currentOrigin) : rawUrl;
+      return nativeOpen(rewritten as string | URL | undefined, ...(rest as []));
+    }) as typeof target.open;
+  }
 
   const NativeEventSource = target.EventSource;
   if (typeof NativeEventSource === 'function') {

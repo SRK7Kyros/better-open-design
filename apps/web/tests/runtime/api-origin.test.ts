@@ -158,6 +158,25 @@ describe('installApiOriginRewriter', () => {
     );
   });
 
+  it('rewrites window.open so an opened tab lands on the daemon', () => {
+    const open = vi.fn(() => null);
+    const { win } = fakeWindow({
+      open,
+      __OD_CONFIG__: { apiBase: 'https://od.example.com' },
+    });
+    installApiOriginRewriter(win);
+
+    win.open('/api/library/assets/a1/raw', '_blank', 'noopener');
+    expect(open).toHaveBeenLastCalledWith(
+      'https://od.example.com/api/library/assets/a1/raw',
+      '_blank',
+      'noopener',
+    );
+
+    win.open('https://example.com/docs');
+    expect(open).toHaveBeenLastCalledWith('https://example.com/docs');
+  });
+
   it('is idempotent across remounts', () => {
     const { win } = fakeWindow({ __OD_CONFIG__: { apiBase: 'https://od.example.com' } });
     installApiOriginRewriter(win);

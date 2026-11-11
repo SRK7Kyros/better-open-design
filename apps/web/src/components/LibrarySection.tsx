@@ -52,6 +52,7 @@ import { LibraryPreviewModal } from './LibraryPreviewModal';
 import { LibraryUploadModal } from './LibraryUploadModal';
 import styles from './LibrarySection.module.css';
 import { useT } from '../i18n';
+import { daemonResourceUrl } from '../runtime/api-origin';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import { resolveProjectWorkspaceContext } from '../collab/useProjectWorkspaceScope';
@@ -1078,8 +1079,8 @@ export function LibrarySection({ active, onOpenProject }: Props) {
         .filter((a) => a.kind === 'font')
         .map(
           (a) =>
-            `@font-face{font-family:"${fontFamilyFor(a.id)}";src:url("${libraryAssetRawUrl(
-              a.id,
+            `@font-face{font-family:"${fontFamilyFor(a.id)}";src:url("${daemonResourceUrl(
+              libraryAssetRawUrl(a.id),
             )}");font-display:swap;}`,
         )
         .join('\n'),
