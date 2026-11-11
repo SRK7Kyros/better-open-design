@@ -2,7 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { I18nProvider, useI18n } from '../i18n';
 import { MatrixLoader } from './MatrixLoader';
-import { probeDaemonSession, unlockDaemon } from '../runtime/daemon-session';
+import {
+  DAEMON_UNAUTHORIZED_EVENT,
+  probeDaemonSession,
+  unlockDaemon,
+} from '../runtime/daemon-session';
 import styles from './DaemonAuthGate.module.css';
 
 type Phase = 'probing' | 'ready' | 'locked';
@@ -74,22 +78,52 @@ function UnlockForm({ onUnlocked }: UnlockFormProps) {
  * A failed probe (daemon down, CORS misconfigured) never blocks the app: the
  * product surfaces its own connection errors, and a second, different failure
  * screen on top of them helps nobody.
+ *
+ * The cookie expires (`OD_SESSION_TTL_HOURS`, 12 by default) and the operator
+ * can rotate `OD_API_TOKEN`, both of which turn every `/api` call into a 401.
+ * The probe at mount would never run again, so the running app would fail
+ * request by request with no way back; an expiring session is routine on a
+ * hosted deployment, so the gate re-probes on `od-daemon-unauthorized` and
+ * shows the form *over* the app, keeping the workspace mounted underneath.
  */
 export function DaemonAuthGate({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>('probing');
+  const [reauth, setReauth] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void probeDaemonSession().then((state) => {
+    const settle = (state: Awaited<ReturnType<typeof probeDaemonSession>>): void => {
       if (cancelled) return;
-      setPhase(state?.required === true && !state.authenticated ? 'locked' : 'ready');
-    });
+      if (state?.required === true && !state.authenticated) setPhase('locked');
+      else setPhase('ready');
+    };
+    const onUnauthorized = (): void => {
+      void probeDaemonSession().then((state) => {
+        if (cancelled) return;
+        setReauth(state?.required === true && !state.authenticated);
+      });
+    };
+
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, onUnauthorized);
+    void probeDaemonSession().then(settle);
     return () => {
       cancelled = true;
+      window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, onUnauthorized);
     };
   }, []);
 
-  if (phase === 'ready') return <>{children}</>;
+  if (phase === 'ready') {
+    return (
+      <>
+        {children}
+        {reauth ? (
+          <div className={styles.overlay} role="dialog" aria-modal="true">
+            <UnlockForm onUnlocked={() => setReauth(false)} />
+          </div>
+        ) : null}
+      </>
+    );
+  }
   if (phase === 'probing') {
     return (
       <div className="od-loading-shell">

@@ -14,6 +14,19 @@ export interface DaemonSessionState {
 }
 
 export type UnlockResult = { ok: true } | { ok: false; message: string };
+/**
+ * Broadcast when a daemon request comes back 401: the cookie expired, or the
+ * operator rotated `OD_API_TOKEN`. The shell listens for it and offers the
+ * unlock form again *over* the running app — without this, the first expiry
+ * leaves every panel failing with no way back except a manual reload.
+ */
+export const DAEMON_UNAUTHORIZED_EVENT = 'od-daemon-unauthorized';
+
+export function reportDaemonUnauthorized(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(DAEMON_UNAUTHORIZED_EVENT));
+}
+
 
 const SESSION_PATH = '/api/auth/session';
 

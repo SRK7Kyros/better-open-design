@@ -1,3 +1,5 @@
+import { reportDaemonUnauthorized } from './daemon-session';
+
 /**
  * Split-origin support: let the web bundle run on one origin while the daemon
  * lives on another.
@@ -121,6 +123,20 @@ export function daemonResourceUrl(target: string): string {
 
 type BrowserGlobal = Window & typeof globalThis;
 
+const SESSION_PATH = '/api/auth/session';
+
+/**
+ * A 401 on a daemon request means the browser session cookie is gone (expiry or
+ * a rotated `OD_API_TOKEN`). The exchange endpoint is excluded: its own 401 is
+ * the answer to a wrong token, which the unlock form is already showing.
+ */
+function watchSessionExpiry(response: Promise<Response>, original: string): Promise<Response> {
+  return response.then((result) => {
+    if (result.status === 401 && !original.includes(SESSION_PATH)) reportDaemonUnauthorized();
+    return result;
+  });
+}
+
 /**
  * Attributes whose value the browser fetches or navigates to on its own, with
  * no JavaScript in between. `fetch` and `EventSource` are patched separately;
@@ -231,16 +247,20 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
   target.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string') {
       const url = rewriteApiUrl(input, apiBase, currentOrigin);
-      return nativeFetch(url, targetsDaemon(input, url) ? withCredentials(init) : init);
+      const daemon = targetsDaemon(input, url);
+      const pending = nativeFetch(url, daemon ? withCredentials(init) : init);
+      return daemon ? watchSessionExpiry(pending, input) : pending;
     }
     if (input instanceof URL) {
       const url = rewriteApiUrl(input.href, apiBase, currentOrigin);
-      return nativeFetch(url, targetsDaemon(input.href, url) ? withCredentials(init) : init);
+      const daemon = targetsDaemon(input.href, url);
+      const pending = nativeFetch(url, daemon ? withCredentials(init) : init);
+      return daemon ? watchSessionExpiry(pending, input.href) : pending;
     }
     if (target.Request && input instanceof target.Request) {
       const rewritten = rewriteApiUrl(input.url, apiBase, currentOrigin);
       if (targetsDaemon(input.url, rewritten)) {
-        return nativeFetch(copyRequest(input, rewritten), init);
+        return watchSessionExpiry(nativeFetch(copyRequest(input, rewritten), init), input.url);
       }
     }
     return nativeFetch(input as RequestInfo, init);

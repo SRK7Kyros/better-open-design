@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { DAEMON_UNAUTHORIZED_EVENT } from '../../src/runtime/daemon-session';
 import {
   installApiOriginRewriter,
   normalizeApiBase,
@@ -183,5 +185,57 @@ describe('installApiOriginRewriter', () => {
     const patched = win.fetch;
     expect(installApiOriginRewriter(win)).toBe('https://od.example.com');
     expect(win.fetch).toBe(patched);
+  });
+});
+
+describe('daemon session expiry', () => {
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__odApiOriginInstalled;
+    delete (window as unknown as Record<string, unknown>).__OD_CONFIG__;
+  });
+
+  // The wrapper captures `window.fetch` at install time, so the stub has to be
+  // in place first.
+  function installWithBase(status: number): ReturnType<typeof vi.fn> {
+    (window as unknown as Window & { __OD_CONFIG__?: { apiBase: string } }).__OD_CONFIG__ = {
+      apiBase: 'https://od.example.com',
+    };
+    const stub = vi.fn(async () => new Response('{}', { status }));
+    (window as unknown as { fetch: unknown }).fetch = stub;
+    installApiOriginRewriter(window as unknown as Window & typeof globalThis);
+    return stub;
+  }
+
+  it('announces a 401 from a daemon request so the shell can ask for the token again', async () => {
+    installWithBase(401);
+    const seen = vi.fn();
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+
+    await window.fetch('/api/projects');
+
+    expect(seen).toHaveBeenCalledTimes(1);
+    window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+  });
+
+  it('stays quiet for a 200', async () => {
+    installWithBase(200);
+    const seen = vi.fn();
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+
+    await window.fetch('/api/projects');
+
+    expect(seen).not.toHaveBeenCalled();
+    window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+  });
+
+  it('stays quiet for the session exchange itself', async () => {
+    installWithBase(401);
+    const seen = vi.fn();
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+
+    await window.fetch('/api/auth/session', { method: 'POST' });
+
+    expect(seen).not.toHaveBeenCalled();
+    window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
   });
 });
