@@ -119,11 +119,11 @@ reuse workloads whose paths did not change.
 
 Measured on a 4-core ARM VM (one shard of each, `--shard=1/4`):
 
-| Suite | Files / cases | Wall clock | Full suite, extrapolated |
+| Suite | Files / cases | Wall clock | Full suite |
 |---|---|---|---|
-| `apps/web`, `--maxWorkers=2` | 356 / 3938 | 416 s | ~28 min |
-| `apps/daemon`, serial config | 266 / 4025 | 1142 s | ~76 min |
-| `apps/daemon`, `vitest.parallel.config.ts`, 3 workers | 266 / 4025 | 485 s | ~32 min |
+| `apps/web`, `--maxWorkers=2` | 356 / 3938 | 416 s | ~28 min (4 shards) |
+| `apps/daemon`, serial config | 266 / 4025 | 1142 s, 2 red | ~76 min (4 shards) |
+| `apps/daemon`, `vitest.parallel.config.ts`, 3 workers | 266 / 4025 | 485 s shard 1, 322–347 s shards 2–4 | **1491 s ≈ 25 min, all four shards green** |
 
 `apps/daemon` defaults to one file at a time (`fileParallelism: false`) because
 its suites mutate `process.env` / `PATH` and bind real servers. Upstream also
@@ -141,10 +141,12 @@ OD_CI_DAEMON_MAX_WORKERS=3 pnpm --filter @open-design/daemon exec vitest \
 
 The parallel config also removes a flake: serial runs put every file in the same
 worker, so a leftover diagnostics write made `workspace-context-authority-server-wiring`
-fail its `rm` teardown in full-suite runs (green standalone). Its teardown now
-restores `prom-client`'s registry and the module cache before touching the temp
-tree, so a lost race can no longer cascade into "a metric ... has already been
-registered" in the next case.
+fail its `rm` teardown in full-suite runs (green standalone, 13/13). Its teardown
+now restores `prom-client`'s registry and the module cache before touching the
+temp tree, so a lost race can no longer cascade into "a metric ... has already
+been registered" in the next case. All four shards are green under the parallel
+config; the source-side race it papered over — `createDiagnosticsEvidence.close()`
+does not await an in-flight checkpoint write — is still open.
 
 ## Staying rebaseable
 
