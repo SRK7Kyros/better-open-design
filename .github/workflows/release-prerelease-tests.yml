@@ -130,7 +130,7 @@ jobs:
       - name: Run daemon test shard
         env:
           OD_WATCHER_TEST_DEBUG: "1"
-        run: pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4
+        run: pnpm --filter @open-design/daemon exec vitest run -c vitest.parallel.config.ts --shard=${{ matrix.shard }}/4
   verify:
     name: Verify build (typecheck + tests)
     runs-on: ubuntu-latest

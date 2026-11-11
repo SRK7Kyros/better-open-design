@@ -1639,7 +1639,7 @@ process.stdin.on("end", () => {
     expect(daemonTests).toContain("if: ${{ needs.plan.outputs.daemon_count != '0' }}");
     expect(daemonTests).toContain("fail-fast: false");
     expect(daemonTests).toContain("matrix: ${{ fromJSON(needs.plan.outputs.daemon_matrix) }}");
-    expect(daemonTests).toContain("pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4");
+    expect(daemonTests).toContain("pnpm --filter @open-design/daemon exec vitest run -c vitest.parallel.config.ts --shard=${{ matrix.shard }}/4");
     expect(validate).toContain("- daemon_unit_tests");
     expect(validate).toContain("[$run | to_entries[] | select(.value) | .key]");
   });
@@ -2184,7 +2184,7 @@ process.stdin.on("end", () => {
     const daemonGate = sectionBetween(tests, "  daemon_unit_tests:", "  verify:");
     expect(daemonGate).toContain("shard: [1, 2, 3, 4]");
     expect(daemonGate).toContain("ref: ${{ inputs.commit }}");
-    expect(daemonGate).toContain("pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4");
+    expect(daemonGate).toContain("pnpm --filter @open-design/daemon exec vitest run -c vitest.parallel.config.ts --shard=${{ matrix.shard }}/4");
 
     const verifyGate = tests.slice(tests.indexOf("  verify:"));
     expect(verifyGate).toContain("ref: ${{ inputs.commit }}");

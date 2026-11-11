@@ -681,7 +681,7 @@ describe("release workflows", () => {
     // The suites moved verbatim and still run against the resolved build commit.
     for (const suite of [
       "pnpm --filter @open-design/e2e test",
-      "pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4",
+      "pnpm --filter @open-design/daemon exec vitest run -c vitest.parallel.config.ts --shard=${{ matrix.shard }}/4",
       "pnpm -r --workspace-concurrency=4 --if-present run typecheck",
       "run: pnpm guard",
       "uses: ./.github/workflows/ui-extended-main.yml",
