@@ -135,17 +135,47 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
 
   const currentOrigin = target.location?.origin;
   const nativeFetch = target.fetch.bind(target);
+
+  const targetsDaemon = (original: string, rewritten: string): boolean =>
+    rewritten !== original || original.startsWith(apiBase);
+
+  const withCredentials = (init: RequestInit | undefined): RequestInit =>
+    init?.credentials ? init : { ...init, credentials: 'include' };
+
+  const copyRequest = (request: Request, url: string): Request => {
+    const init: RequestInit & { duplex?: 'half' } = {
+      method: request.method,
+      headers: request.headers,
+      credentials: 'include',
+      mode: request.mode,
+      cache: request.cache,
+      redirect: request.redirect,
+      referrer: request.referrer,
+      referrerPolicy: request.referrerPolicy,
+      integrity: request.integrity,
+      keepalive: request.keepalive,
+      signal: request.signal,
+    };
+    if (request.body != null) {
+      init.body = request.body;
+      init.duplex = 'half';
+    }
+    return new target.Request(url, init);
+  };
+
   target.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string') {
-      return nativeFetch(rewriteApiUrl(input, apiBase, currentOrigin), init);
+      const url = rewriteApiUrl(input, apiBase, currentOrigin);
+      return nativeFetch(url, targetsDaemon(input, url) ? withCredentials(init) : init);
     }
     if (input instanceof URL) {
-      return nativeFetch(rewriteApiUrl(input.href, apiBase, currentOrigin), init);
+      const url = rewriteApiUrl(input.href, apiBase, currentOrigin);
+      return nativeFetch(url, targetsDaemon(input.href, url) ? withCredentials(init) : init);
     }
     if (target.Request && input instanceof target.Request) {
       const rewritten = rewriteApiUrl(input.url, apiBase, currentOrigin);
-      if (rewritten !== input.url) {
-        return nativeFetch(new target.Request(rewritten, input), init);
+      if (targetsDaemon(input.url, rewritten)) {
+        return nativeFetch(copyRequest(input, rewritten), init);
       }
     }
     return nativeFetch(input as RequestInfo, init);
@@ -158,8 +188,12 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
       url: string | URL,
       config?: EventSourceInit,
     ) {
-      const target = typeof url === 'string' ? url : url.href;
-      return new NativeEventSource(rewriteApiUrl(target, apiBase, currentOrigin), config);
+      const rawUrl = typeof url === 'string' ? url : url.href;
+      const rewritten = rewriteApiUrl(rawUrl, apiBase, currentOrigin);
+      const credentials = targetsDaemon(rawUrl, rewritten)
+        ? { withCredentials: true, ...(config ?? {}) }
+        : config;
+      return new NativeEventSource(rewritten, credentials);
     } as unknown as typeof EventSource;
     RewritingEventSource.prototype = NativeEventSource.prototype;
     Object.assign(RewritingEventSource, {

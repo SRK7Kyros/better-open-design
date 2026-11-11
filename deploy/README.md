@@ -41,6 +41,13 @@ password. The browser reuses those credentials for same-origin API requests;
 CLI clients and reverse proxies can continue to send
 `Authorization: Bearer <OD_API_TOKEN>`.
 
+The web build can also unlock itself: with no cached Basic credentials it shows
+a one-field access-token form, and `POST /api/auth/session` exchanges the token
+for an HttpOnly `od_session` cookie (lifetime `OD_SESSION_TTL_HOURS`, default
+12). The cookie is what makes streaming (`EventSource`), preview iframes and
+image loads work, since none of those can carry an `Authorization` header. See
+`deploy/web/HOSTED-GAPS.md`.
+
 The published `ghcr.io/nexu-io/od` package must be public for anonymous
 `docker pull`, Docker Compose, and Dokploy installs to work. If GHCR returns an
 authentication or access-denied error for this image, an organization maintainer

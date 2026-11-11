@@ -5907,4 +5907,11 @@ export interface Dict {
   'homeInvite.invite': string;
   'homeInvite.dismiss': string;
   'homeInvite.sent': string;
+
+  'daemonUnlock.title': string;
+  'daemonUnlock.body': string;
+  'daemonUnlock.fieldLabel': string;
+  'daemonUnlock.placeholder': string;
+  'daemonUnlock.submit': string;
+  'daemonUnlock.submitting': string;
 }

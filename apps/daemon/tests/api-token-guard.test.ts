@@ -281,3 +281,91 @@ describe('browser authentication for non-loopback Docker peers', () => {
     });
   });
 });
+
+describe('browser session for a token-protected daemon', () => {
+  const PREVIOUS_ALLOWED_ORIGINS = process.env.OD_ALLOWED_ORIGINS;
+  const TOKEN = 'session-test-token';
+
+  beforeEach(async () => {
+    process.env.OD_API_TOKEN = TOKEN;
+    process.env.OD_ALLOWED_ORIGINS = 'https://od.example.com';
+    staticDir = mkdtempSync(path.join(os.tmpdir(), 'od-api-session-static-'));
+    writeFileSync(path.join(staticDir, 'index.html'), '<!doctype html><div>docker shell</div>');
+
+    const started = (await startServer({
+      port: 0,
+      host: '127.0.0.1',
+      returnServer: true,
+      staticDir,
+    })) as {
+      url: string;
+      server: Server;
+      shutdown?: () => Promise<void> | void;
+    };
+    baseUrl = started.url;
+    server = started.server;
+    shutdown = started.shutdown;
+    makeConnectionsAppearNonLoopback(server);
+  });
+
+  afterEach(() => {
+    if (PREVIOUS_ALLOWED_ORIGINS === undefined) delete process.env.OD_ALLOWED_ORIGINS;
+    else process.env.OD_ALLOWED_ORIGINS = PREVIOUS_ALLOWED_ORIGINS;
+  });
+
+  it('reports the session state without credentials', async () => {
+    const resp = await fetch(`${baseUrl}/api/auth/session`);
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ required: true, authenticated: false });
+  });
+
+  it('answers the preflight a browser sends without credentials', async () => {
+    const resp = await fetch(`${baseUrl}/api/plugins`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://od.example.com',
+        'access-control-request-method': 'GET',
+      },
+    });
+    expect(resp.status).toBe(204);
+    expect(resp.headers.get('access-control-allow-origin')).toBe('https://od.example.com');
+    expect(resp.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+
+  it('exchanges the token for a cookie that authenticates the API and the shell', async () => {
+    const exchange = await fetch(`${baseUrl}/api/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: TOKEN }),
+    });
+    expect(exchange.status).toBe(200);
+    const setCookie = exchange.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('od_session=');
+    expect(setCookie).toContain('HttpOnly');
+    const cookie = setCookie.split(';')[0];
+
+    const api = await fetch(`${baseUrl}/api/plugins`, { headers: { cookie } });
+    expect(api.status).toBe(200);
+
+    const state = await fetch(`${baseUrl}/api/auth/session`, { headers: { cookie } });
+    expect(await state.json()).toEqual({ required: true, authenticated: true });
+
+    const shell = await fetch(`${baseUrl}/`, { headers: { cookie } });
+    expect(shell.status).toBe(200);
+    expect(await shell.text()).toContain('docker shell');
+  });
+
+  it('refuses a wrong token and a forged cookie', async () => {
+    const wrong = await fetch(`${baseUrl}/api/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'not-the-token' }),
+    });
+    expect(wrong.status).toBe(401);
+
+    const forged = await fetch(`${baseUrl}/api/plugins`, {
+      headers: { cookie: 'od_session=v1.9999999999999.forged' },
+    });
+    expect(forged.status).toBe(401);
+  });
+});

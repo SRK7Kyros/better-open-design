@@ -17,46 +17,56 @@ only with an operator workaround; **P2** is a sharp edge.
 
 | # | Gap | Severity | Affected shape |
 |---|---|---|---|
-| 1 | The web bundle has no way to send `OD_API_TOKEN` | P0 | B (token, no proxy auth), C |
-| 2 | `EventSource` cannot carry an `Authorization` header | P0 | C |
+| 1 | The web bundle has no way to send `OD_API_TOKEN` | ~~P0~~ **fixed** | B (token, no proxy auth), C |
+| 2 | `EventSource` cannot carry an `Authorization` header | ~~P0~~ **fixed** | C |
 | 3 | Preview documents forbid being framed cross-origin | ~~P0~~ **fixed** | C |
 | 4 | Browser-native subresource loads bypass the URL rewriter | P1 | C |
 | 5 | `/api/dialog/open-folder` is loopback/same-origin only | P1 | B, C |
 | 6 | Local-filesystem endpoints assume browser and daemon share a machine | P1 | B, C |
 | 7 | No `basePath` support for serving the build under a sub-path | P2 | B, C |
 
-## 1. The web bundle has no way to send `OD_API_TOKEN` — P0
+## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
-`apps/daemon/src/api-token-auth.ts` accepts exactly two credentials: a Bearer
-token, or HTTP Basic with username `open-design` and the token as the password.
-The guard in `apps/daemon/src/server.ts` (`if (apiTokenAuthEnabled)`) applies it
-to every `/api/*` request except the health probes, and exempts loopback peers.
+The daemon's guard authenticated exactly two credentials: a Bearer token, or
+HTTP Basic with username `open-design` and the token as the password. The web
+build could produce neither — nothing in `apps/web/src` builds a daemon
+credential, and the Basic challenge is not a rescue: browsers present it for
+navigations and subresources, and hand a cross-origin `fetch` its 401 instead.
 
-`apps/web/src/runtime/api-origin.ts` rewrites *URLs*. Nothing in `apps/web/src`
-builds a daemon credential — grep the tree for `Authorization` and every hit is
-a model-provider key, not the daemon's.
+A browser can carry exactly one credential without help: a cookie. So the
+daemon now exchanges the token for one:
 
-So with `OD_API_TOKEN` set and the browser on a non-loopback path:
+| Route | Purpose |
+|---|---|
+| `GET /api/auth/session` | `{ required, authenticated }` — the probe the shell runs before its first paint |
+| `POST /api/auth/session` | exchange `{ token }` for an HttpOnly `od_session` cookie (10 attempts / 5 min per peer) |
+| `DELETE /api/auth/session` | drop the cookie |
 
-- every `fetch` fails with `401 {"code":"API_TOKEN_REQUIRED"}`;
-- the Basic challenge is not a rescue: browsers present the credential dialog
-  for *navigations and subresources*, not for a cross-origin `fetch`, which
-  hands the 401 back to JS.
+`apps/daemon/src/http/session-cookie.ts` signs the expiry with the API token
+(HMAC), so nothing is stored server-side, a restart does not log browsers out,
+and rotating `OD_API_TOKEN` invalidates every session at once. The cookie never
+contains the token itself. `SameSite=Lax` when the deferred page is same-site
+with the daemon (including sibling subdomains), `SameSite=None; Secure` for a
+true cross-site deployment over TLS, and an explicit
+`400 SESSION_COOKIE_UNSUPPORTED` over plain HTTP — a `None` cookie without
+`Secure` is dropped by the browser, so pretending to set it would be worse than
+refusing.
 
-Shape B avoids this today only because nginx terminates auth and the daemon
-sees a loopback peer — i.e. the token story is unused, not working.
+On the client, `apps/web/src/runtime/daemon-session.ts` owns the exchange and
+`components/DaemonAuthGate.tsx` renders the unlock form when the probe says the
+daemon requires a token. A failed probe never blocks the app.
 
-**Fix**: mint a session instead of passing the token through the app. Add
-`POST /api/auth/session` (rate-limited, token in the body) that sets
-`Set-Cookie: od_session=<opaque>; HttpOnly; SameSite=Lax|None; Secure; Path=/`,
-accept the cookie in the same guard, and have the web show a one-field unlock
-screen when `GET /api/version` answers 401. Cookie auth also fixes gaps 2 and 4
-for free, because the browser attaches it to every same-site request including
-`EventSource` and `<img>`. The cheaper alternative — accept `?od_token=` on
-GET/HEAD and append it from the runtime config — works for gap 2 and 4 but puts
-the secret in URLs, so it should be a documented opt-in, never the default.
+Two things this fixed that were invisible before:
 
-## 2. `EventSource` cannot carry an `Authorization` header — P0
+- **Preflight was being 401'd.** The token guard was mounted *before* the CORS
+  responder, and a browser preflight never carries credentials — so every
+  non-simple request from an allow-listed origin failed before CORS could
+  answer it. `OPTIONS` now passes through the guard (it cannot mutate state).
+- **The SPA document challenge ignored the session cookie.** The guard that
+  challenges static shell navigations accepted only Basic; a cookie-authenticated
+  browser would have been challenged on every reload.
+
+## 2. `EventSource` cannot carry an `Authorization` header — fixed
 
 Four live surfaces stream over SSE and all of them construct `EventSource`
 directly: `components/LibrarySection.tsx`, `components/MemorySection.tsx`,
@@ -64,12 +74,11 @@ directly: `components/LibrarySection.tsx`, `components/MemorySection.tsx`,
 the chat/run streams inside `providers/registry.ts`). The `EventSource` spec has
 no per-request headers; `withCredentials` only adds cookies.
 
-With a base set, the rewriter moves these onto the daemon origin, so they fail
-cross-origin *and* unauthenticated: chat, run logs, terminal and memory all go
-silent.
-
-**Fix**: covered by the cookie session in gap 1. If the token-in-query route is
-taken instead, the rewriter must append it to `EventSource` URLs specifically.
+The rewriter now passes `withCredentials: true` for daemon URLs, and the fetch
+wrapper adds `credentials: 'include'` to daemon requests — but only to those: a
+third-party URL keeps the caller's mode (or the `same-origin` default), so
+unrelated origins never start receiving cookies on a deployment that opted into
+a daemon base.
 
 ## 3. Preview documents forbid being framed cross-origin — fixed
 
@@ -159,6 +168,12 @@ and static paths for us) and mention it in the README's shape B section. The
 - CORS + preflight for `OD_ALLOWED_ORIGINS` on `/api`, `/artifacts`,
   `/plugins/previews` and `/frames` (`apps/daemon/src/http/cors-allowlist.ts`,
   mounted before the origin guard so `OPTIONS` terminates instead of 404ing).
+  A preflight from an allow-listed origin answers `204` with
+  `access-control-allow-origin` and `allow-credentials` even though it carries
+  no credentials (`tests/api-token-guard.test.ts`).
+- The session exchange end to end against a real server, with the peer forced
+  non-loopback: `POST /api/auth/session` → cookie → `GET /api/plugins` 200,
+  `GET /` serves the shell, forged cookie 401, wrong token 401.
 - The origin guard itself (`apps/daemon/src/origin-validation.ts`): a browser
   origin that is not listed is rejected even if CORS would have allowed the
   read.

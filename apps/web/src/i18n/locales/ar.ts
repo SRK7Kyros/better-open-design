@@ -5613,4 +5613,11 @@ export const ar: Dict = {
   'chat.record.canceled': "ملغى",
   'chat.record.pending': "لم يبدأ",
   'chat.record.unfinished': "لم يكتمل",
+  'daemonUnlock.title': "This server needs its access token",
+  'daemonUnlock.body': "Enter the daemon's OD_API_TOKEN once. It is exchanged for an HttpOnly session cookie, never stored in the page and never sent in a URL.",
+  'daemonUnlock.fieldLabel': "Access token",
+  'daemonUnlock.placeholder': "Paste OD_API_TOKEN",
+  'daemonUnlock.submit': "Unlock",
+  'daemonUnlock.submitting': "Unlocking…",
+
 };

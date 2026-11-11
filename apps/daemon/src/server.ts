@@ -880,6 +880,7 @@ import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerAutomationRoutes } from './routes/automation.js';
 import { registerAttributionRoutes } from './routes/attribution.js';
 import { registerDaemonRoutes } from './routes/daemon.js';
+import { registerDaemonSessionRoutes } from './routes/daemon-session.js';
 import { registerGenuiRoutes } from './routes/genui.js';
 import { registerDesignSystemRoutes } from './routes/design-systems.js';
 import { registerHostToolsRoutes } from './routes/host-tools.js';
@@ -1222,6 +1223,12 @@ import {
   isApiAuthDisabled,
   isApiTokenMiddlewareEnabled,
 } from './api-token-auth.js';
+import {
+  daemonSessionMatches,
+  readCookie,
+  SESSION_COOKIE_NAME,
+  SESSION_ROUTE_PATH,
+} from './http/session-cookie.js';
 import { createOpenDesignPublicMetadataService } from './services/open-design-public-metadata.js';
 import { createWhatsNewService } from './services/whats-new.js';
 import { execCommandViaLoginShell } from './services/login-shell.js';
@@ -3330,6 +3337,13 @@ export async function startServer({
     ]);
     app.use('/api', (req, res, next) => {
       if (openProbePaths.has(req.path)) return next();
+      // A browser preflight never carries credentials, so challenging it would
+      // make every non-simple request from an allow-listed origin fail before
+      // the CORS responder (below) can answer it. OPTIONS cannot mutate state.
+      if (req.method === 'OPTIONS') return next();
+      // The session endpoints exist precisely so a browser that has no
+      // credential yet can obtain one.
+      if (req.path === SESSION_ROUTE_PATH) return next();
       if (req.method === 'GET') {
         const previewAsset = parseProjectPreviewAssetPath(req.path);
         if (
@@ -3345,6 +3359,14 @@ export async function startServer({
       // UI which has no proxy in the path.
       if (isLoopbackPeerAddress(req.socket?.remoteAddress)) return next();
       if (apiTokenAuthorizationMatches(req.get('authorization'), apiToken)) return next();
+      if (
+        daemonSessionMatches(
+          readCookie(req.get('cookie'), SESSION_COOKIE_NAME),
+          apiToken,
+        )
+      ) {
+        return next();
+      }
       if (
         req.method === 'POST'
         && PROJECT_RUN_SCOPED_EXPORT_PATH_RE.test(req.path)
@@ -3374,6 +3396,14 @@ export async function startServer({
       if (isLoopbackPeerAddress(req.socket?.remoteAddress)) return next();
       if (resolveStaticSpaFallbackPath(req, staticDir) === null) return next();
       if (apiTokenAuthorizationMatches(req.get('authorization'), apiToken)) return next();
+      if (
+        daemonSessionMatches(
+          readCookie(req.get('cookie'), SESSION_COOKIE_NAME),
+          apiToken,
+        )
+      ) {
+        return next();
+      }
 
       res.setHeader('WWW-Authenticate', API_TOKEN_BASIC_CHALLENGE);
       return res.status(401).type('text/plain').send(
@@ -3381,6 +3411,14 @@ export async function startServer({
       );
     });
   }
+
+  registerDaemonSessionRoutes(app, {
+    apiToken,
+    apiTokenAuthEnabled,
+    isTrustedPeer: (req) => isLoopbackPeerAddress(req.socket?.remoteAddress),
+    hasValidAuthorization: (req) =>
+      apiTokenAuthorizationMatches(req.get('authorization'), apiToken),
+  });
 
   const designSystemServices = createDesignSystemServerServices({
     // `db` (below) is not initialized yet at this point in `startServer` —

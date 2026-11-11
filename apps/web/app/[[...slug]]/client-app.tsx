@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 
 import { installErrorHandlers } from '../../src/analytics/error-tracking';
+import { DaemonAuthGate } from '../../src/components/DaemonAuthGate';
 import { MatrixLoader } from '../../src/components/MatrixLoader';
 import { installWebObservability } from '../../src/observability/install';
 import { installApiOriginRewriter } from '../../src/runtime/api-origin';
@@ -65,5 +66,9 @@ const App = dynamic(() => import('../../src/App').then((m) => m.App), {
 });
 
 export function ClientApp() {
-  return <App />;
+  return (
+    <DaemonAuthGate>
+      <App />
+    </DaemonAuthGate>
+  );
 }

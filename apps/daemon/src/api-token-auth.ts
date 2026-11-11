@@ -59,3 +59,13 @@ export function apiTokenAuthorizationMatches(value: unknown, apiToken: string): 
     && basic.username === API_TOKEN_BASIC_USERNAME
     && secretsMatch(basic.password, apiToken);
 }
+
+/**
+ * Constant-time comparison of a raw secret with the configured token, for
+ * channels that cannot carry an `Authorization` header (the session exchange
+ * reads the token from a JSON body).
+ */
+export function apiTokenEquals(candidate: unknown, apiToken: string): boolean {
+  if (typeof candidate !== 'string' || apiToken.length === 0) return false;
+  return secretsMatch(candidate, apiToken);
+}

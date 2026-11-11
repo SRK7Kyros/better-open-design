@@ -93,16 +93,31 @@ which both permits the request (`origin-validation.ts`) and emits the CORS
 response headers plus the preflight answer (`apps/daemon/src/http/cors-allowlist.ts`).
 Credentials are allowed for exactly those origins, never `*`.
 
-Shape C is not finished yet: the rewriter covers `fetch` and `EventSource`, not
-browser-native subresource loads, and the client has no way to present
-`OD_API_TOKEN`. Both are tracked — with the fix and its evidence — in
-[`HOSTED-GAPS.md`](./HOSTED-GAPS.md). Until gaps 1, 2 and 4 there are closed,
-use shape B for anything where the preview panel or chat streaming matters.
+Shape C is usable but not finished: the rewriter still covers only `fetch` and
+`EventSource`, not browser-native subresource loads. Preview documents are
+embeddable now, and the browser carries a daemon session cookie automatically,
+so the preview panel and chat streaming work; the remaining gaps — raw asset
+URLs written literally in JSX, the OS folder picker, the local-filesystem
+endpoints, `basePath` — are tracked in [`HOSTED-GAPS.md`](./HOSTED-GAPS.md).
 
 `OD_ALLOWED_ORIGINS` has to be set here even when the framing page and the
 daemon are the same origin: it is the source of the `frame-ancestors` policy on
 preview documents (`apps/daemon/src/http/frame-ancestors.ts`), so without it a
 split-origin preview renders as an empty canvas.
+
+### Sessions (both shapes)
+
+With `OD_API_TOKEN` set, the first load of the web build shows a one-field
+unlock screen. The token is exchanged once for an HttpOnly `od_session` cookie
+(`POST /api/auth/session`) and never appears in the page or in a URL; the cookie
+signature is derived from `OD_API_TOKEN`, so rotating the token logs every
+browser out. `OD_SESSION_TTL_HOURS` (default `12`) sets its lifetime.
+
+Behind a proxy that already authenticates (nginx Basic, an IdP) the daemon sees
+a loopback peer and the screen never appears. A cross-site deployment must be
+served over TLS: a `SameSite=None` cookie without `Secure` would be dropped by
+the browser, so the daemon answers `400 SESSION_COOKIE_UNSUPPORTED` instead of
+handing back a session that cannot work.
 
 ---
 
@@ -113,5 +128,6 @@ split-origin preview renders as an empty canvas.
 | `OD_DAEMON_ORIGIN` | web (dev + proxy rewrites) | daemon origin `next dev` proxies to; default `http://127.0.0.1:$OD_PORT` |
 | `NEXT_PUBLIC_OD_API_BASE` | web build | absolute daemon base baked into the bundle |
 | `OD_ALLOWED_ORIGINS` | daemon | comma-separated browser origins allowed to call `/api`, to receive CORS headers, and to frame preview documents (`frame-ancestors`) |
+| `OD_SESSION_TTL_HOURS` | daemon | lifetime of the browser session cookie minted by `POST /api/auth/session`; default `12` |
 | `OD_BIND_HOST` | daemon | interface to bind; keep `127.0.0.1` behind a proxy |
 | `OD_WEB_PORT` | daemon | extra port treated as same-origin (proxy-fronted single-process setups) |

@@ -5613,4 +5613,11 @@ export const it: Dict = {
   'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
   'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'ancora persa',
+
+  'daemonUnlock.title': 'Questo server richiede il token di accesso',
+  'daemonUnlock.body': "Inserisci una volta l'OD_API_TOKEN del daemon. Viene scambiato con un cookie di sessione HttpOnly: non resta nella pagina e non finisce in nessun URL.",
+  'daemonUnlock.fieldLabel': 'Token di accesso',
+  'daemonUnlock.placeholder': 'Incolla OD_API_TOKEN',
+  'daemonUnlock.submit': 'Sblocca',
+  'daemonUnlock.submitting': 'Sblocco…',
 };

@@ -5613,4 +5613,11 @@ export const ja: Dict = {
   'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
   'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'アンカーが失われました',
+  'daemonUnlock.title': "This server needs its access token",
+  'daemonUnlock.body': "Enter the daemon's OD_API_TOKEN once. It is exchanged for an HttpOnly session cookie, never stored in the page and never sent in a URL.",
+  'daemonUnlock.fieldLabel': "Access token",
+  'daemonUnlock.placeholder': "Paste OD_API_TOKEN",
+  'daemonUnlock.submit': "Unlock",
+  'daemonUnlock.submitting': "Unlocking…",
+
 };

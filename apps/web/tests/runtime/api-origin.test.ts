@@ -77,7 +77,10 @@ describe('installApiOriginRewriter', () => {
         static CONNECTING = 0;
         static OPEN = 1;
         static CLOSED = 2;
-        constructor(public url: string) {}
+        constructor(
+          public url: string,
+          public config?: { withCredentials?: boolean },
+        ) {}
       },
       ...overrides,
     } as unknown as Window & typeof globalThis;
@@ -103,13 +106,18 @@ describe('installApiOriginRewriter', () => {
     expect(installApiOriginRewriter(win)).toBe('https://od.example.com');
 
     await win.fetch('/api/info');
-    expect(fetchMock).toHaveBeenLastCalledWith('https://od.example.com/api/info', undefined);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'https://od.example.com/api/info',
+      { credentials: 'include' },
+    );
 
     await win.fetch('/_next/static/chunk.js');
     expect(fetchMock).toHaveBeenLastCalledWith('/_next/static/chunk.js', undefined);
 
     const stream = new win.EventSource('/api/events');
     expect(stream.url).toBe('https://od.example.com/api/events');
+    expect((stream as unknown as { config?: unknown }).config)
+      .toEqual({ withCredentials: true });
   });
 
   it('wraps a Request object instead of dropping its init', async () => {
@@ -126,6 +134,28 @@ describe('installApiOriginRewriter', () => {
     expect(rewritten).toBeInstanceOf(Request);
     expect(rewritten.url).toBe('https://od.example.com/api/runs');
     expect(rewritten.method).toBe('POST');
+    expect(rewritten.credentials).toBe('include');
+  });
+
+  it('leaves a third-party request without cookies', async () => {
+    const { win, fetchMock } = fakeWindow({
+      __OD_CONFIG__: { apiBase: 'https://od.example.com' },
+    });
+    installApiOriginRewriter(win);
+    await win.fetch('https://api.stripe.com/v1/charges');
+    expect(fetchMock).toHaveBeenLastCalledWith('https://api.stripe.com/v1/charges', undefined);
+  });
+
+  it('keeps an explicit credentials mode the caller chose', async () => {
+    const { win, fetchMock } = fakeWindow({
+      __OD_CONFIG__: { apiBase: 'https://od.example.com' },
+    });
+    installApiOriginRewriter(win);
+    await win.fetch('/api/info', { credentials: 'omit' });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'https://od.example.com/api/info',
+      { credentials: 'omit' },
+    );
   });
 
   it('is idempotent across remounts', () => {

@@ -6064,4 +6064,11 @@ export const zhTW: Dict = {
   'comment.saveTargetMissing': '評論目標已不存在，請重新選擇元素；草稿已保留。',
   'comment.savePreviewNotReady': '預覽正在重新整理，草稿已保留，請在完成後重試儲存。',
   'comment.anchorState.lost': '錨點已遺失',
+  'daemonUnlock.title': "This server needs its access token",
+  'daemonUnlock.body': "Enter the daemon's OD_API_TOKEN once. It is exchanged for an HttpOnly session cookie, never stored in the page and never sent in a URL.",
+  'daemonUnlock.fieldLabel': "Access token",
+  'daemonUnlock.placeholder': "Paste OD_API_TOKEN",
+  'daemonUnlock.submit': "Unlock",
+  'daemonUnlock.submitting': "Unlocking…",
+
 };
