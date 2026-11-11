@@ -581,62 +581,12 @@ export function HandoffButton({
     return null;
   }
 
-  // No available editors — render a Finder/Explorer/File-Manager single-button
-  // fallback so the surface is never blank, including the true zero-editor
-  // response where the daemon reports `editors: []`.
+  // Nothing on this host can open the project: no editor CLI and no file
+  // manager either. Rendering a reveal button here only produces a 409 from
+  // /api/projects/:id/open-in, so a pure web deployment gets no hand-off
+  // surface at all instead of a button that always fails.
   if (available.length === 0) {
-    const fallbackLabel = platform === 'win32' ? 'Explorer' : platform === 'linux' ? 'File Manager' : 'Finder';
-    const fallbackId: HostEditorId =
-      platform === 'win32' ? 'explorer' : platform === 'linux' ? 'file-manager' : 'finder';
-    // Wrap the solo button so a daemon spawn failure can surface an
-    // inline error next to it — without this, ProjectView's
-    // `<HandoffButton projectId={…} />` (no reveal callback) turns a
-    // rejected `openProjectInEditor` into a silent no-op.
-    return (
-      <div className="handoff-wrap handoff-wrap--solo" data-testid="handoff-wrap">
-        <button
-          type="button"
-          className="handoff-trigger handoff-trigger--solo od-tooltip"
-          title={t('handoff.fallbackTitle', { target: fallbackLabel })}
-          data-tooltip={t('handoff.fallbackTitle', { target: fallbackLabel })}
-          data-tooltip-placement="bottom"
-          disabled={busy === fallbackId}
-          onClick={() => {
-            // The fallback opens the project folder in the OS file manager.
-            // finder / explorer / file-manager are real entries in the daemon's
-            // open-in catalogue (open / explorer / xdg-open), so this performs a
-            // genuine reveal rather than a no-op; the renderer reveal bridge is a
-            // secondary fallback if the daemon spawn fails.
-            fireHandoff({
-              element: 'open_editor',
-              target_id: handoffTargetIdToTracking(fallbackId),
-              target_available: false,
-              handoff_tab: 'editor',
-            });
-            setError(null);
-            setBusy(fallbackId);
-            void openProjectInEditor(projectId, fallbackId, workspaceContext)
-              .catch((err) => {
-                setError(err instanceof Error ? err.message : String(err));
-                onRequestRevealInFinder?.();
-              })
-              .finally(() => setBusy(null));
-          }}
-        >
-          {busy === fallbackId ? (
-            <Icon name="spinner" size={20} />
-          ) : (
-            <EditorIcon editorId={fallbackId} size={20} />
-          )}
-          <span className="handoff-trigger-label">{fallbackLabel}</span>
-        </button>
-        {error ? (
-          <div className="handoff-menu-error" role="alert" data-testid="handoff-fallback-error">
-            {error}
-          </div>
-        ) : null}
-      </div>
-    );
+    return null;
   }
 
   return (

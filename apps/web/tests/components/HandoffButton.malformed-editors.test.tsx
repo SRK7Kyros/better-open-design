@@ -9,8 +9,9 @@
 //
 // The invariant these lock in: whatever `/api/editors` answers, the component
 // reduces it to a renderable list — array-shaped, every entry carrying a
-// non-empty `id` and `label` and a real boolean `available` — and falls back to
-// the OS file-manager control instead of crashing the viewer.
+// non-empty `id` and `label` and a real boolean `available` — and renders no
+// hand-off surface at all when nothing is launchable, instead of crashing the
+// viewer or offering a control that can only fail.
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -61,8 +62,9 @@ describe('HandoffButton /api/editors response hardening', () => {
 
     renderHandoff();
 
-    // The zero-editor fallback control, not a thrown render.
-    expect(await screen.findByText('Finder')).toBeTruthy();
+    // No throw, and no surface: nothing on the host can open the project.
+    await waitFor(() => expect(fetchHostEditors).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('handoff-wrap')).toBeNull());
   });
 
   it('survives a response body that is not an object at all', async () => {
@@ -70,7 +72,8 @@ describe('HandoffButton /api/editors response hardening', () => {
 
     renderHandoff();
 
-    expect(await screen.findByText('Finder')).toBeTruthy();
+    await waitFor(() => expect(fetchHostEditors).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('handoff-wrap')).toBeNull());
   });
 
   it('drops malformed entries and keeps the well-formed ones', async () => {
@@ -109,9 +112,10 @@ describe('HandoffButton /api/editors response hardening', () => {
 
     renderHandoff();
 
-    // No entry counts as available, so the file-manager fallback owns the
-    // surface and a truthy-but-wrong flag never becomes a launch target.
-    expect(await screen.findByText('Finder')).toBeTruthy();
+    // A truthy-but-wrong flag never becomes a launch target, and nothing is
+    // rendered for it: the surface only exists when a target is launchable.
+    await waitFor(() => expect(fetchHostEditors).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('handoff-wrap')).toBeNull());
     expect(screen.queryByTestId('handoff-trigger')).toBeNull();
     expect(screen.queryByText('Cursor')).toBeNull();
   });
@@ -121,9 +125,9 @@ describe('HandoffButton /api/editors response hardening', () => {
 
     renderHandoff();
 
-    // An unrecognized platform degrades to `unknown`, which shares the default
-    // reveal target rather than leaking the raw string into the open-in call.
-    expect(await screen.findByText('Finder')).toBeTruthy();
-    await waitFor(() => expect(screen.getByText('Finder')).toBeTruthy());
+    // An unrecognized platform degrades to `unknown`, which leaves no reveal
+    // target and must not reach the open-in call.
+    await waitFor(() => expect(fetchHostEditors).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('handoff-wrap')).toBeNull());
   });
 });
