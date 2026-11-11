@@ -17,6 +17,7 @@ const unlock = vi.mocked(unlockDaemon);
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 describe('DaemonAuthGate', () => {
@@ -84,5 +85,26 @@ describe('DaemonAuthGate after the session expires', () => {
     window.dispatchEvent(new Event(DAEMON_UNAUTHORIZED_EVENT));
     await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
     expect(screen.queryByLabelText(/access token/i)).toBeNull();
+  });
+});
+
+describe('DaemonAuthGate overlay locale', () => {
+  it('re-opens the form in the language the user picked', async () => {
+    // The gate lives outside <App>, so its overlay needs its own provider;
+    // without one the form would silently fall back to English.
+    window.localStorage.setItem('open-design:locale', 'it');
+    // `detectInitialLocale` only trusts a stored pick tagged as manual; an
+    // untagged value is treated as a legacy auto-detection.
+    window.localStorage.setItem('open-design:locale-source', 'manual');
+    probe.mockResolvedValueOnce({ required: true, authenticated: true });
+    probe.mockResolvedValue({ required: true, authenticated: false });
+
+    render(<DaemonAuthGate><p>app mounted</p></DaemonAuthGate>);
+    await waitFor(() => expect(screen.queryByText('app mounted')).not.toBeNull());
+
+    window.dispatchEvent(new Event(DAEMON_UNAUTHORIZED_EVENT));
+
+    await waitFor(() => expect(screen.queryByText(/Sblocca/)).not.toBeNull());
+    expect(screen.queryByText(/Unlock/)).toBeNull();
   });
 });

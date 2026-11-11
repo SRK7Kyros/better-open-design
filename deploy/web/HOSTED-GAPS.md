@@ -316,10 +316,12 @@ cost is amortised. Covered by `apps/daemon/tests/attempt-buckets.test.ts`.
 - `GET /api/editors` returns the real catalogue locally and
   `{ editors: [], platform: 'unknown' }` to a remote peer, and `/open-in`
   answers `501 HANDOFF_UNAVAILABLE` there (same test file).
-- An expiring session does not strand the app: a 401 from a daemon request
-  re-opens the unlock form *over* the running workspace
-  (`apps/web/tests/components/DaemonAuthGate.test.tsx`), and the exchange
-  endpoint's own 401 never triggers it.
+- An expiring session does not strand the app, in **either** shape: a 401 from a
+  daemon request re-opens the unlock form *over* the running workspace
+  (`apps/web/tests/components/DaemonAuthGate.test.tsx`), the form speaks the
+  user's locale, and the exchange endpoint's own 401 never triggers it. The
+  report is installed even with no `apiBase` configured — a reverse-proxied
+  same-origin deployment has the same 12 h cookie and no rewriting at all.
 - A proxy-shaped `Host`/`Origin` pair declared in `OD_ALLOWED_ORIGINS` reaches
   `GET /api/library/connection` with `200`, while a rebound host is still
   `403` — end to end against a real server

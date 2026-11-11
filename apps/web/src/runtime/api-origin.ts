@@ -15,8 +15,10 @@ import { reportDaemonUnauthorized } from './daemon-session';
  * several hundred call sites — keeps this fork rebaseable: upstream can keep
  * writing `fetch('/api/…')` and it resolves to the configured daemon.
  *
- * Unset base (the default, and what every existing deployment has) leaves both
- * transports untouched, so this module is a no-op unless the operator opts in.
+ * Unset base (the default, and what every existing deployment has) leaves the
+ * transports untouched, so nothing is rewritten unless the operator opts in.
+ * One thing is still installed: the 401 report, because an expiring browser
+ * session strands a same-origin deployment exactly as it strands a split one.
  */
 
 export interface OpenDesignRuntimeConfig {
@@ -130,11 +132,44 @@ const SESSION_PATH = '/api/auth/session';
  * a rotated `OD_API_TOKEN`). The exchange endpoint is excluded: its own 401 is
  * the answer to a wrong token, which the unlock form is already showing.
  */
-function watchSessionExpiry(response: Promise<Response>, original: string): Promise<Response> {
+function watchSessionExpiry(response: Promise<Response>, pathname: string): Promise<Response> {
   return response.then((result) => {
-    if (result.status === 401 && !original.includes(SESSION_PATH)) reportDaemonUnauthorized();
+    if (result.status === 401 && pathname !== SESSION_PATH) reportDaemonUnauthorized();
     return result;
   });
+}
+
+/**
+ * The daemon path a request targets, or null for everything else. Comparing
+ * pathnames rather than raw strings keeps `/api/auth/session` from matching a
+ * URL that merely mentions it, and keeps third-party requests out of the
+ * watcher.
+ */
+function daemonPathnameOf(url: string, origin?: string): string | null {
+  if (!url) return null;
+  try {
+    const parsed = origin ? new URL(url, origin) : new URL(url, 'http://localhost');
+    return isDaemonPath(parsed.pathname) ? parsed.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Same-origin deployments need no rewriting, but they need the expiry signal
+ * just as much: an expired cookie turns every `/api` call into a 401, and with
+ * nobody listening the shell leaves the workspace up with no way back in. This
+ * wrapper adds the report and nothing else — no rewrite, no credentials change.
+ */
+function installSameOriginSessionWatcher(target: BrowserGlobal): void {
+  const nativeFetch = target.fetch.bind(target);
+  target.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const original =
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const pathname = daemonPathnameOf(original, target.location?.origin);
+    const pending = nativeFetch(input as RequestInfo, init);
+    return pathname ? watchSessionExpiry(pending, pathname) : pending;
+  }) as typeof target.fetch;
 }
 
 /**
@@ -210,7 +245,10 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
 
   const apiBase = readRuntimeBase(target);
   marked.__odApiOriginInstalled = apiBase;
-  if (!apiBase) return '';
+  if (!apiBase) {
+    installSameOriginSessionWatcher(target);
+    return '';
+  }
 
   installDaemonSubresourceRewriter(target, apiBase);
 
@@ -244,23 +282,35 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
     return new target.Request(url, init);
   };
 
+  const watch = (
+    daemon: boolean,
+    pending: Promise<Response>,
+    original: string,
+  ): Promise<Response> => {
+    if (!daemon) return pending;
+    const pathname = daemonPathnameOf(original, currentOrigin) ?? original;
+    return watchSessionExpiry(pending, pathname);
+  };
+
   target.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string') {
       const url = rewriteApiUrl(input, apiBase, currentOrigin);
       const daemon = targetsDaemon(input, url);
-      const pending = nativeFetch(url, daemon ? withCredentials(init) : init);
-      return daemon ? watchSessionExpiry(pending, input) : pending;
+      return watch(daemon, nativeFetch(url, daemon ? withCredentials(init) : init), input);
     }
     if (input instanceof URL) {
       const url = rewriteApiUrl(input.href, apiBase, currentOrigin);
       const daemon = targetsDaemon(input.href, url);
-      const pending = nativeFetch(url, daemon ? withCredentials(init) : init);
-      return daemon ? watchSessionExpiry(pending, input.href) : pending;
+      return watch(daemon, nativeFetch(url, daemon ? withCredentials(init) : init), input.href);
     }
     if (target.Request && input instanceof target.Request) {
       const rewritten = rewriteApiUrl(input.url, apiBase, currentOrigin);
       if (targetsDaemon(input.url, rewritten)) {
-        return watchSessionExpiry(nativeFetch(copyRequest(input, rewritten), init), input.url);
+        return watch(
+          true,
+          nativeFetch(copyRequest(input, rewritten), init),
+          input.url,
+        );
       }
     }
     return nativeFetch(input as RequestInfo, init);

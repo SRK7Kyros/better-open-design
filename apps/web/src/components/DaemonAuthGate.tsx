@@ -13,9 +13,12 @@ type Phase = 'probing' | 'ready' | 'locked';
 
 interface UnlockFormProps {
   onUnlocked: () => void;
+  // Rendered over the running app rather than as the whole page, so the user
+  // sees the workspace they are being let back into.
+  inline?: boolean;
 }
 
-function UnlockForm({ onUnlocked }: UnlockFormProps) {
+function UnlockForm({ onUnlocked, inline = false }: UnlockFormProps) {
   const { t } = useI18n();
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,32 +41,33 @@ function UnlockForm({ onUnlocked }: UnlockFormProps) {
     setError(result.message);
   }
 
-  return (
-    <main className={styles.shell}>
-      <form className={styles.card} onSubmit={handleSubmit}>
-        <h1 className={styles.title}>{t('daemonUnlock.title')}</h1>
-        <p className={styles.body}>{t('daemonUnlock.body')}</p>
-        <label className={styles.label} htmlFor="od-daemon-token">
-          {t('daemonUnlock.fieldLabel')}
-        </label>
-        <input
-          id="od-daemon-token"
-          className={styles.input}
-          type="password"
-          autoComplete="current-password"
-          autoFocus
-          spellCheck={false}
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          placeholder={t('daemonUnlock.placeholder')}
-        />
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        <button className={styles.submit} type="submit" disabled={submitting || !token.trim()}>
-          {submitting ? t('daemonUnlock.submitting') : t('daemonUnlock.submit')}
-        </button>
-      </form>
-    </main>
+  const form = (
+    <form className={styles.card} onSubmit={handleSubmit}>
+      <h1 className={styles.title}>{t('daemonUnlock.title')}</h1>
+      <p className={styles.body}>{t('daemonUnlock.body')}</p>
+      <label className={styles.label} htmlFor="od-daemon-token">
+        {t('daemonUnlock.fieldLabel')}
+      </label>
+      <input
+        id="od-daemon-token"
+        className={styles.input}
+        type="password"
+        autoComplete="current-password"
+        autoFocus
+        spellCheck={false}
+        value={token}
+        onChange={(event) => setToken(event.target.value)}
+        placeholder={t('daemonUnlock.placeholder')}
+      />
+      {error ? <p className={styles.error} role="alert">{error}</p> : null}
+      <button className={styles.submit} type="submit" disabled={submitting || !token.trim()}>
+        {submitting ? t('daemonUnlock.submitting') : t('daemonUnlock.submit')}
+      </button>
+    </form>
   );
+
+  if (inline) return form;
+  return <main className={styles.shell}>{form}</main>;
 }
 
 /**
@@ -85,6 +89,10 @@ function UnlockForm({ onUnlocked }: UnlockFormProps) {
  * request by request with no way back; an expiring session is routine on a
  * hosted deployment, so the gate re-probes on `od-daemon-unauthorized` and
  * shows the form *over* the app, keeping the workspace mounted underneath.
+ *
+ * The gate sits outside `<App>`, so it is outside the app's own `I18nProvider`.
+ * The overlay gets its own provider, which reads the same persisted locale —
+ * otherwise re-authenticating would drop the user into an English form.
  */
 export function DaemonAuthGate({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>('probing');
@@ -117,9 +125,11 @@ export function DaemonAuthGate({ children }: { children: React.ReactNode }) {
       <>
         {children}
         {reauth ? (
-          <div className={styles.overlay} role="dialog" aria-modal="true">
-            <UnlockForm onUnlocked={() => setReauth(false)} />
-          </div>
+          <I18nProvider>
+            <div className={styles.overlay} role="dialog" aria-modal="true">
+              <UnlockForm inline onUnlocked={() => setReauth(false)} />
+            </div>
+          </I18nProvider>
         ) : null}
       </>
     );

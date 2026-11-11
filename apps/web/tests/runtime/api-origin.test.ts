@@ -89,12 +89,15 @@ describe('installApiOriginRewriter', () => {
     return { win, fetchMock };
   }
 
-  it('does not patch transports when no base is set', async () => {
+  it('rewrites nothing when no base is set', async () => {
     const { win, fetchMock } = fakeWindow();
     expect(installApiOriginRewriter(win)).toBe('');
-    expect(win.fetch).toBe(fetchMock);
+    // A same-origin deployment still installs the 401 report (see the
+    // 'same-origin deployment' block), but no URL may be touched.
     await win.fetch('/api/info');
-    expect(fetchMock).toHaveBeenCalledWith('/api/info');
+    expect(fetchMock).toHaveBeenCalledWith('/api/info', undefined);
+    await win.fetch('/assets/logo.svg');
+    expect(fetchMock).toHaveBeenCalledWith('/assets/logo.svg', undefined);
   });
 
   it('rewrites daemon fetches and event streams from the meta tag', async () => {
@@ -234,6 +237,45 @@ describe('daemon session expiry', () => {
     window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
 
     await window.fetch('/api/auth/session', { method: 'POST' });
+
+    expect(seen).not.toHaveBeenCalled();
+    window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+  });
+});
+
+describe('same-origin deployment', () => {
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__odApiOriginInstalled;
+    delete (window as unknown as Record<string, unknown>).__OD_CONFIG__;
+  });
+
+  function installSameOrigin(status: number): ReturnType<typeof vi.fn> {
+    // No `__OD_CONFIG__.apiBase`, no meta tag: the default upstream shape.
+    const stub = vi.fn(async () => new Response('{}', { status }));
+    (window as unknown as { fetch: unknown }).fetch = stub;
+    installApiOriginRewriter(window as unknown as Window & typeof globalThis);
+    return stub;
+  }
+
+  it('still reports a 401 so an expired session can be reopened', async () => {
+    // Nothing is rewritten here, but the cookie expires just the same; without
+    // the report the shell would keep a workspace whose every panel is dead.
+    installSameOrigin(401);
+    const seen = vi.fn();
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+
+    await window.fetch('/api/projects');
+
+    expect(seen).toHaveBeenCalledTimes(1);
+    window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+  });
+
+  it('ignores a 401 from a path the daemon does not own', async () => {
+    installSameOrigin(401);
+    const seen = vi.fn();
+    window.addEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
+
+    await window.fetch('/favicon.ico');
 
     expect(seen).not.toHaveBeenCalled();
     window.removeEventListener(DAEMON_UNAUTHORIZED_EVENT, seen);
