@@ -25,6 +25,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 6 | Local-filesystem endpoints assume browser and daemon share a machine | ~~P1~~ **partly fixed** | B, C |
 | 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
 | 8 | The editor hand-off surface advertises editors that spawn on the server | ~~P1~~ **fixed** | B, C |
+| 9 | `requireLocalDaemonRequest` rejects every proxy-shaped `Host` | ~~P0~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
@@ -226,6 +227,32 @@ client's own navigation happen.
 
 ---
 
+## 9. `requireLocalDaemonRequest` rejects every proxy-shaped `Host` — fixed
+
+The routes that mutate daemon-local state — the whole library (`/api/library/*`),
+every connector grant (`/api/connectors/*`), `/api/daemon/db/*`, `/api/daemon/shutdown`,
+the strategy-rollout routes and the memory writer — are mounted behind
+`apps/daemon/src/http/local-daemon-request.ts`. It demanded three things: a
+loopback peer, a loopback `Host`, and a loopback `Origin`.
+
+The first is true behind a proxy on the same host; the other two are not. nginx
+forwards `Host: od.example.com` (and `Origin: https://od.example.com`), so every
+one of those routes answered `403 "request host must be a loopback daemon
+address"` on **shape B, the shape this repo documents as recommended**.
+
+Measured on this box while the register was being written: `GET
+/api/library/connection` with the same session cookie answers `200` straight to
+`127.0.0.1:7456` and `403` through the proxied origin.
+
+What the check really defends is DNS rebinding, and a rebound page sends *its
+own* hostname and origin — never an allowlisted one. So a declared
+`OD_ALLOWED_ORIGINS` entry now counts as naming this daemon, in both headers,
+which is exactly the rule `isLocalSameOrigin` already used for the 25 routes
+that call it. A peer that is not loopback additionally has to present a
+declared origin, so a forged loopback `Origin` from elsewhere buys nothing.
+
+---
+
 ## What is verified working
 
 - CORS + preflight for `OD_ALLOWED_ORIGINS` on `/api`, `/artifacts`,
@@ -255,3 +282,8 @@ client's own navigation happen.
 - `GET /api/editors` returns the real catalogue locally and
   `{ editors: [], platform: 'unknown' }` to a remote peer, and `/open-in`
   answers `501 HANDOFF_UNAVAILABLE` there (same test file).
+- A proxy-shaped `Host`/`Origin` pair declared in `OD_ALLOWED_ORIGINS` reaches
+  `GET /api/library/connection` with `200`, while a rebound host is still
+  `403` — end to end against a real server
+  (`apps/daemon/tests/host-capabilities.test.ts`), plus the full
+  peer/host/origin matrix in `apps/daemon/tests/local-daemon-request.test.ts`.

@@ -93,12 +93,14 @@ which both permits the request (`origin-validation.ts`) and emits the CORS
 response headers plus the preflight answer (`apps/daemon/src/http/cors-allowlist.ts`).
 Credentials are allowed for exactly those origins, never `*`.
 
-Shape C is usable but not finished: the rewriter still covers only `fetch` and
-`EventSource`, not browser-native subresource loads. Preview documents are
-embeddable now, and the browser carries a daemon session cookie automatically,
-so the preview panel and chat streaming work; the remaining gaps — raw asset
-URLs written literally in JSX, the OS folder picker, the local-filesystem
-endpoints, `basePath` — are tracked in [`HOSTED-GAPS.md`](./HOSTED-GAPS.md).
+Shape C works end to end: `fetch`, `Request`, `EventSource`, `window.open` and
+the element attributes React sets (`src`/`href`/`poster`/`action`) are rewritten
+onto `apiBase`, preview documents may be framed from the declared origin, the
+browser carries a daemon session cookie, and the OS-facing surfaces (folder
+picker, editor hand-off, open-external) answer "not from this machine" instead
+of failing weirdly. The residual differences are listed in
+[`HOSTED-GAPS.md`](./HOSTED-GAPS.md), and the two that remain are deliberate:
+local-filesystem *fields* act on the daemon host and are labelled as such.
 
 `OD_ALLOWED_ORIGINS` has to be set here even when the framing page and the
 daemon are the same origin: it is the source of the `frame-ancestors` policy on
