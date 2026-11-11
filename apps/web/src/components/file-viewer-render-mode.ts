@@ -260,8 +260,36 @@ export function htmlNeedsPoweredPreview(source: string | null | undefined): bool
   return false;
 }
 
+/**
+ * Return true when the document routes against its own `location`, which a
+ * srcdoc frame can never provide.
+ *
+ * A srcdoc frame's document has `location.href === "about:srcdoc"` and an
+ * opaque origin. A router that resolves a path against it — the canonical
+ * `new URL("/", location.href)` in a React Router data router's
+ * `encodeLocation` — throws at module-eval time, the tree never mounts, and
+ * the preview panel stays blank. The same artifact renders correctly through
+ * the URL-load transport, which serves it from a real origin.
+ *
+ * The predicates are deliberately narrow: only expressions that *require* a
+ * real origin count. `localStorage` alone does not — the URL-load path gets
+ * the storage shim from the daemon (`odPreviewBridge=sandbox`) and only loses
+ * the host-seeded snapshot, whereas srcDoc loses the whole document.
+ */
+export function htmlNeedsRealOrigin(source: string | null | undefined): boolean {
+  if (!source) return false;
+  // Matches `new URL("/", location.href)` however `location` is reached
+  // (`window.` / `document.`); `[^)]*` keeps the scan inside the call.
+  if (/\bnew\s+URL\s*\([^)]*\blocation\b/i.test(source)) return true;
+  if (/\blocation\s*\.\s*(?:origin|pathname)\b/i.test(source)) return true;
+  if (/\bcreate(?:Browser|Hash)Router\s*\(/.test(source)) return true;
+  return false;
+}
+
 export function htmlNeedsLocalInteractionBridge(source: string): boolean {
-  return /<form\b/i.test(source) || /\bhref\s*=\s*["']#(?:\/|!)/i.test(source);
+  // Requires a real closing tag: React Router ships a bare `<form` inside a
+  // dev-warning string, which used to force a working SPA onto srcDoc.
+  return /<form\b[\s\S]*?<\/form>/i.test(source) || /\bhref\s*=\s*["']#(?:\/|!)/i.test(source);
 }
 
 export function htmlNeedsSandboxShim(source: string): boolean {

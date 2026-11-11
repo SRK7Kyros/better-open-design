@@ -6,6 +6,7 @@ import {
   htmlNeedsFocusGuard,
   htmlNeedsLocalInteractionBridge,
   htmlNeedsPoweredPreview,
+  htmlNeedsRealOrigin,
   htmlNeedsRedirectGuard,
   htmlNeedsSandboxShim,
   parseForceInline,
@@ -24,6 +25,16 @@ describe('shouldUrlLoadHtmlPreview', () => {
     expect(htmlNeedsLocalInteractionBridge('<a href="#/details/7">Details</a>')).toBe(true);
     expect(htmlNeedsLocalInteractionBridge('<a href="#contact">Contact</a>')).toBe(false);
     expect(shouldUrlLoadHtmlPreview({ ...base, needsLocalInteractionBridge: true })).toBe(false);
+  });
+
+  it('ignores a bare <form substring that never closes', () => {
+    // React Router's dev warning embeds `<form` in a string literal; matching
+    // it forced a working SPA onto srcDoc, where it cannot mount.
+    expect(
+      htmlNeedsLocalInteractionBridge(
+        'var w = "You rendered descendant <Routes> (or called useRoutes()) under a <form without a closing tag";',
+      ),
+    ).toBe(false);
   });
 
   it('falls back to srcDoc when the file is a deck (deck bridge required)', () => {
@@ -314,6 +325,23 @@ describe('htmlNeedsSandboxShim', () => {
     expect(htmlNeedsSandboxShim('<link rel="stylesheet" href="styles.css">')).toBe(false);
     // Text content mentioning `script src=` (e.g. a docs page) must not trigger.
     expect(htmlNeedsSandboxShim('<p>Use <code>&lt;script src=&quot;app.js&quot;&gt;</code></p>')).toBe(false);
+  });
+});
+
+describe('htmlNeedsRealOrigin', () => {
+  it('detects routers that resolve paths against the frame location', () => {
+    expect(htmlNeedsRealOrigin('const u = new URL("/", location.href)')).toBe(true);
+    expect(htmlNeedsRealOrigin('const u = new URL("/app", document.location.href)')).toBe(true);
+    expect(htmlNeedsRealOrigin('fetch(`${location.origin}/api/x`)')).toBe(true);
+    expect(htmlNeedsRealOrigin('if (location.pathname.startsWith("/a")) go()')).toBe(true);
+    expect(htmlNeedsRealOrigin('createBrowserRouter([{ path: "/", element: el }])')).toBe(true);
+  });
+
+  it('leaves documents that only use storage on the srcDoc-eligible side', () => {
+    expect(htmlNeedsRealOrigin('<script>localStorage.setItem("k", "v")</script>')).toBe(false);
+    expect(htmlNeedsRealOrigin('<a href="#/details/7">Details</a>')).toBe(false);
+    expect(htmlNeedsRealOrigin('')).toBe(false);
+    expect(htmlNeedsRealOrigin(null)).toBe(false);
   });
 });
 

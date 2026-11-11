@@ -256,6 +256,7 @@ import {
   htmlNeedsFocusGuard,
   htmlNeedsLocalInteractionBridge,
   htmlNeedsPoweredPreview,
+  htmlNeedsRealOrigin,
   htmlNeedsRedirectGuard,
   htmlNeedsSandboxShim,
   parseForceInline,
@@ -10569,7 +10570,15 @@ function HtmlViewer({
     const s = routingHtmlSource;
     return s != null && htmlNeedsRedirectGuard(s);
   }, [passiveLargeHtmlPreview, routingHtmlSource]);
-  const needsPersistentStorage = Boolean(routingHtmlSource && /\blocalStorage\b/.test(routingHtmlSource));
+  // Host-seeded Web Storage only exists on the srcDoc transport, but an
+  // artifact that routes against `location` cannot run there at all (opaque
+  // `about:srcdoc` origin). Showing the artifact without its seed wins over
+  // not showing it: the URL-load path still gets the daemon's storage shim.
+  const needsPersistentStorage = Boolean(
+    routingHtmlSource
+      && /\blocalStorage\b/.test(routingHtmlSource)
+      && !htmlNeedsRealOrigin(routingHtmlSource),
+  );
   const urlDocumentGuardsAvailable =
     liveHtml === undefined && file.size <= PREVIEW_URL_GUARD_MAX_HTML_BYTES;
   // Set by the injected guard's `od:redirect-loop-blocked` postMessage. The
