@@ -2,6 +2,7 @@ import net from 'node:net';
 import type { Express, Request } from 'express';
 
 import { apiTokenEquals } from '../api-token-auth.js';
+import { pruneAttemptBuckets } from '../http/attempt-buckets.js';
 import { isLoopbackPeerAddress } from '../http/local-daemon-request.js';
 import {
   clearSessionCookie,
@@ -31,6 +32,15 @@ export interface RegisterDaemonSessionRoutesDeps {
 const MAX_ATTEMPTS = 10;
 const ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
 
+/** How many new client buckets may accumulate before the table is swept. */
+const SWEEP_EVERY_INSERTS = 256;
+
+/**
+ * Hard ceiling on tracked clients. Far above any real deployment, low enough
+ * that a distributed attacker cannot use the login surface as an allocator.
+ */
+const MAX_TRACKED_CLIENTS = 10_000;
+
 /**
  * Three endpoints, all reachable without credentials (they are what a browser
  * uses to obtain them):
@@ -49,6 +59,21 @@ export function registerDaemonSessionRoutes(
 ): void {
   const env = deps.env ?? process.env;
   const attempts = new Map<string, { count: number; resetAt: number }>();
+  let insertsSinceSweep = 0;
+
+  /**
+   * A bucket expires logically when its window passes, but the entry stayed in
+   * the map forever: rotating the client address (free with IPv6 privacy
+   * addresses) added one permanent entry per attempt to a login endpoint that
+   * anyone can reach. Sweep every few hundred new buckets — cheap amortised,
+   * and it keeps a public surface from growing the process without bound.
+   */
+  const noteAttempt = (now: number): void => {
+    insertsSinceSweep += 1;
+    if (insertsSinceSweep < SWEEP_EVERY_INSERTS) return;
+    insertsSinceSweep = 0;
+    pruneAttemptBuckets(attempts, now, MAX_TRACKED_CLIENTS);
+  };
 
   /**
    * Behind a reverse proxy every browser arrives from the proxy's socket
@@ -87,6 +112,7 @@ export function registerDaemonSessionRoutes(
     const bucket = attempts.get(key);
     if (!bucket || bucket.resetAt <= now) {
       attempts.set(key, { count: 1, resetAt: now + ATTEMPT_WINDOW_MS });
+      noteAttempt(now);
       return;
     }
     bucket.count += 1;

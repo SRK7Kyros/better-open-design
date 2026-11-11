@@ -27,6 +27,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 8 | The editor hand-off surface advertises editors that spawn on the server | ~~P1~~ **fixed** | B, C |
 | 9 | `requireLocalDaemonRequest` rejects every proxy-shaped `Host` | ~~P0~~ **fixed** | B, C |
 | 10 | Unlock attempts are bucketed per proxy socket, not per browser | ~~P1~~ **fixed** | B, C |
+| 11 | The unlock rate-limit table is never swept — unbounded growth | ~~P2~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
@@ -268,6 +269,21 @@ and only when the peer can plausibly be that proxy: loopback, or an explicit
 `OD_TRUSTED_PROXIES` entry. A direct caller cannot forge its way into a fresh
 bucket. Covered by `apps/daemon/tests/daemon-session.test.ts`, including a
 server whose peer is forced non-loopback to prove the header is ignored there.
+
+---
+
+## 11. The unlock rate-limit table grew forever — fixed
+
+Buckets expired *logically* (a window of five minutes) but nothing removed the
+entries, and the key comes from a client address. On a public login endpoint an
+address-rotating client — free with IPv6 privacy addresses, cheap with a botnet —
+added one permanent entry per attempt to a process meant to run for weeks.
+
+`pruneAttemptBuckets` (`apps/daemon/src/http/attempt-buckets.ts`) drops expired
+buckets and, under pressure, evicts the soonest-expiring ones down to a hard cap.
+Eviction can only shorten a lockout, never extend it, so the failure mode is
+availability rather than memory. The route sweeps every 256 new buckets, so the
+cost is amortised. Covered by `apps/daemon/tests/attempt-buckets.test.ts`.
 
 ---
 
