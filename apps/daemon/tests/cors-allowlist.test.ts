@@ -60,7 +60,7 @@ describe('createAllowedOriginCors', () => {
   function request(path: string, options: { method?: string; headers?: Record<string, string> } = {}) {
     return fetch(`${baseUrl}${path}`, {
       method: options.method ?? 'GET',
-      headers: options.headers,
+      ...(options.headers ? { headers: options.headers } : {}),
       redirect: 'manual',
     });
   }

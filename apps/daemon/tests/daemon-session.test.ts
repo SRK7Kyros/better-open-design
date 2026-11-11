@@ -28,7 +28,7 @@ describe('daemon session value', () => {
 
   it('rejects a tampered expiry, a foreign signature and a different token', () => {
     const { value } = mintDaemonSession(TOKEN, { now: 1_000, ttlMs: 60_000 });
-    const [version, expiry, signature] = value.split('.');
+    const [version, expiry, signature = ''] = value.split('.');
     expect(daemonSessionMatches(`${version}.${Number(expiry) + 60_000}.${signature}`, TOKEN, 1_000))
       .toBe(false);
     expect(daemonSessionMatches(`${version}.${expiry}.${'b'.repeat(signature.length)}`, TOKEN, 1_000))
@@ -155,7 +155,8 @@ describe('session routes', () => {
         body: JSON.stringify({ token: TOKEN }),
       });
       expect(res.status).toBe(400);
-      expect((await res.json()).error.code).toBe('SESSION_COOKIE_UNSUPPORTED');
+      const body = await res.json() as { error: { code: string } };
+      expect(body.error.code).toBe('SESSION_COOKIE_UNSUPPORTED');
     });
   });
 

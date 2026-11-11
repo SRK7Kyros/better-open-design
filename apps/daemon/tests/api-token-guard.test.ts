@@ -342,7 +342,7 @@ describe('browser session for a token-protected daemon', () => {
     const setCookie = exchange.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain('od_session=');
     expect(setCookie).toContain('HttpOnly');
-    const cookie = setCookie.split(';')[0];
+    const cookie = setCookie.split(';')[0] ?? '';
 
     const api = await fetch(`${baseUrl}/api/plugins`, { headers: { cookie } });
     expect(api.status).toBe(200);
