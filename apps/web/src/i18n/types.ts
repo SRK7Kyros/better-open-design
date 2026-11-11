@@ -2517,6 +2517,9 @@ export interface Dict {
   'newproj.createFromTemplate': string;
   'newproj.createDisabledTitle': string;
   'newproj.openFolder': string;
+  'newproj.serverFolderLabel': string;
+  'newproj.serverFolderPlaceholder': string;
+  'newproj.importServerFolder': string;
   'newproj.openingFolder': string;
   'newproj.importClaudeZip': string;
   'newproj.importClaudeZipTitle': string;

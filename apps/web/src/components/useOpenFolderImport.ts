@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   isOpenDesignHostAvailable,
   pickAndImportHostProject,
@@ -7,6 +7,7 @@ import {
 import { pickLocalFolderPath } from '../state/projects';
 import { resolvedWorkspaceContextForWrite } from '../state/projects';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
+import { fetchHostCapabilities, type HostCapabilities } from '../runtime/host-capabilities';
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 
 interface UseOpenFolderImportArgs {
@@ -23,8 +24,39 @@ export function useOpenFolderImport({
   const workspaceContextState = useWorkspaceContext();
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<{ message: string; details?: string } | null>(null);
+  const [capabilities, setCapabilities] = useState<HostCapabilities | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchHostCapabilities().then((caps) => {
+      if (!cancelled) setCapabilities(caps);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const hasHostPickAndImport = isOpenDesignHostAvailable();
   const available = hasHostPickAndImport ? Boolean(onImportFolderResponse) : Boolean(onImportFolder);
+  // A daemon on another machine cannot open a dialog on the user's desktop, so
+  // the caller renders a path field instead of a picker button.
+  const manualEntry = !hasHostPickAndImport
+    && Boolean(onImportFolder)
+    && capabilities?.folderPicker === false;
+
+  const importFolderPath = useCallback(async (rawPath: string) => {
+    const path = rawPath.trim();
+    if (!onImportFolder || !path) return;
+    setError(null);
+    setImporting(true);
+    try {
+      await onImportFolder(path);
+    } catch (err) {
+      setError({
+        message: err instanceof Error ? err.message : 'Failed to import folder',
+      });
+    } finally {
+      setImporting(false);
+    }
+  }, [onImportFolder]);
 
   const openFolder = useCallback(async () => {
     if (hasHostPickAndImport) {
@@ -77,6 +109,8 @@ export function useOpenFolderImport({
 
   return {
     available,
+    manualEntry,
+    importFolderPath,
     clearError: () => setError(null),
     error,
     importing,

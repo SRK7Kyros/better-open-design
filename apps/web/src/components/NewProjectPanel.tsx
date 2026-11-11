@@ -303,6 +303,7 @@ export function NewProjectPanel({
   const [workingDir, setWorkingDir] = useState<string | null>(null);
   const [workingDirToken, setWorkingDirToken] = useState<string | null>(null);
   const [workingDirPicking, setWorkingDirPicking] = useState(false);
+  const [serverFolderPath, setServerFolderPath] = useState('');
   const [workingDirError, setWorkingDirError] = useState<
     { message: string; details?: string } | null
   >(null);
@@ -1156,7 +1157,38 @@ export function NewProjectPanel({
             </button>
           </>
         ) : null}
-        {folderImport.available ? (
+        {folderImport.manualEntry ? (
+          <div className="newproj-open-folder">
+            <label className="newproj-server-folder">
+              <span>{t('newproj.serverFolderLabel')}</span>
+              <input
+                type="text"
+                value={serverFolderPath}
+                placeholder={t('newproj.serverFolderPlaceholder')}
+                disabled={folderImport.importing}
+                onChange={(ev) => setServerFolderPath(ev.target.value)}
+                onKeyDown={(ev) => {
+                  if (ev.key !== 'Enter') return;
+                  ev.preventDefault();
+                  void folderImport.importFolderPath(serverFolderPath);
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              className="ghost newproj-import"
+              disabled={folderImport.importing || serverFolderPath.trim().length === 0}
+              onClick={() => void folderImport.importFolderPath(serverFolderPath)}
+            >
+              <Icon name="folder" size={14} />
+              <span>
+                {folderImport.importing
+                  ? t('newproj.openingFolder')
+                  : t('newproj.importServerFolder')}
+              </span>
+            </button>
+          </div>
+        ) : folderImport.available ? (
           <div className="newproj-open-folder">
             <button
               type="button"

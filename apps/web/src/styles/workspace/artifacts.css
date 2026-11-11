@@ -4085,6 +4085,24 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   gap: 6px;
   margin-top: 2px;
 }
+.newproj-server-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.newproj-server-folder input {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-input, transparent);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-sm);
+}
+.newproj-server-folder input::placeholder {
+  color: var(--text-muted);
+}
 .newproj-footer {
   padding: 6px 24px 16px;
   font-size: 12px;

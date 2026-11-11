@@ -66,6 +66,7 @@ import {
   type InlineMentionEntity,
 } from '../utils/inlineMentions';
 import { useI18n, useT } from '../i18n';
+import { useHostCapabilities } from '../hooks/useHostCapabilities';
 import { localizePluginInputLabel } from '../i18n/plugin-content';
 import { localizeHomePresetTitle, localizePluginDescription, localizePluginTitle } from './plugins-home/localization';
 import {
@@ -441,6 +442,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 ) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
+  const hostCapabilities = useHostCapabilities();
   // Docked = the composer without Home's page around it. Read in the render
   // below to drop the furniture (headline, type row, example grid) rather than
   // to change how the composer itself behaves.
@@ -1201,7 +1203,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     setProjectReferenceOpen(true);
   }
 
-  const linkLocalCodeAction = onPickLocalCodeDir
+  const linkLocalCodeAction = onPickLocalCodeDir && hostCapabilities?.folderPicker !== false
     ? () => {
         trackHomeChatComposerClick(analytics.track, {
           page_name: 'home',

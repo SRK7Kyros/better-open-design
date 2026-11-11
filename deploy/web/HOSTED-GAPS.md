@@ -22,7 +22,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 3 | Preview documents forbid being framed cross-origin | ~~P0~~ **fixed** | C |
 | 4 | Browser-native subresource loads bypass the URL rewriter | ~~P1~~ **fixed** | C |
 | 5 | `/api/dialog/open-folder` is loopback/same-origin only | ~~P1~~ **fixed** | B, C |
-| 6 | Local-filesystem endpoints assume browser and daemon share a machine | P1 | B, C |
+| 6 | Local-filesystem endpoints assume browser and daemon share a machine | ~~P1~~ **partly fixed** | B, C |
 | 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
@@ -149,7 +149,7 @@ import routes already accept a path string, so the picker is only sugar — the
 follow-up is to render that field when `folderPicker` is false rather than
 letting the action end at a message.
 
-## 6. Local-filesystem endpoints assume one machine — P1
+## 6. Local-filesystem endpoints assume one machine — partly fixed
 
 Same class, no crash, but the UI promises something the deployment cannot
 deliver:
@@ -162,10 +162,23 @@ deliver:
 | `POST /api/agents/:agentId/oauth-launch` | a desktop session exists for `agy` |
 | `GET /api/projects/:id/files` | the project tree is local-readable |
 
-**Fix**: a capability probe the web reads at boot (`GET /api/host-capabilities`)
-that reports `folderPicker`, `localFolders`, `systemTerminal`, and hide/relabel
-the affordances instead of letting them 403. Cheaper interim: label the path
-fields "path on the server".
+The capability probe now exists and the dead affordances are gone:
+
+- `useOpenFolderImport` (`components/useOpenFolderImport.ts`) reports
+  `manualEntry` when the daemon is remote, and the New Project panel renders a
+  **folder path on the server** field instead of the picker button
+  (`newproj.serverFolderLabel` / `.serverFolderPlaceholder` /
+  `.importServerFolder`, all 19 locales).
+- The composer's *Link local code* entry is hidden rather than left to fail:
+  `components/ChatComposer.tsx` and `components/HomeHero.tsx` pass `undefined`
+  to `ComposerPlusMenu` when `folderPicker` is false.
+
+Still open, and deliberately so — these are *server-side* operations, so the
+honest answer is a label, not a hidden feature: `/api/dir-exists`,
+`/api/design-systems/import/local`, `/api/plugins/upload-folder` and
+`/api/agents/:id/oauth-launch` all act on the daemon host. A hosted UI should
+say "path on the server" next to those fields (`oauth-launch` is desktop-only
+and has no hosted equivalent).
 
 ## 7. No `basePath` support — fixed
 

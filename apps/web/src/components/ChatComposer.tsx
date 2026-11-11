@@ -100,6 +100,7 @@ import {
 } from '../utils/inlineMentions';
 import { workspaceContextLinkedDir, workspaceContextLinkedDirs } from './workspace-context';
 import { useProjectCollabContext } from '../collab/collab-context';
+import { useHostCapabilities } from '../hooks/useHostCapabilities';
 import {
   LexicalComposerInput,
   type LexicalComposerInputHandle,
@@ -660,6 +661,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
   ) {
     const { locale, t } = useI18n();
     const analytics = useAnalytics();
+    const hostCapabilities = useHostCapabilities();
     const { workspaceContext } = useProjectCollabContext();
     const activeFileContext =
       projectMetadata?.importedFrom === 'folder' && activeProjectFileName
@@ -3856,7 +3858,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 });
                 setProjectReferenceOpen(true);
               }}
-              onLinkLocalCode={() => {
+              onLinkLocalCode={hostCapabilities?.folderPicker === false ? undefined : () => {
                 trackComposerBar({ element: 'plus_pick', resource_kind: 'workspace', resource_id: 'local-code' });
                 void handleLinkLocalCodeContext();
               }}
