@@ -1,5 +1,6 @@
 import net from 'node:net';
 import type { NextFunction, Request, Response } from 'express';
+import { configuredAllowedHosts, configuredAllowedOrigins } from '../origin-validation.js';
 import { sendApiError } from './api-errors.js';
 
 interface LocalAuthority {
@@ -67,34 +68,91 @@ export function localOriginFromHeader(value: unknown): string | null {
   }
 }
 
-export function validateLocalDaemonRequest(req: Request): LocalDaemonValidation | LocalDaemonValidationError {
-  if (!isLoopbackPeerAddress(req.socket?.remoteAddress)) {
-    return {
-      ok: false,
-      message: 'request peer must be a loopback address',
-      details: { peer: 'remoteAddress' },
-    };
+/**
+ * The origins this deployment declares as "a browser allowed to drive the
+ * daemon" (`OD_ALLOWED_ORIGINS`). A malformed value must never widen this
+ * guard, so parsing failures collapse to an empty list — the caller then sees
+ * exactly the desktop-only behaviour.
+ */
+function declaredOrigins(env: NodeJS.ProcessEnv): { origins: string[]; hosts: string[] } {
+  try {
+    const origins = configuredAllowedOrigins(env);
+    return { origins, hosts: configuredAllowedHosts(origins) };
+  } catch {
+    return { origins: [], hosts: [] };
   }
+}
+
+function declaredOrigin(value: unknown, origins: readonly string[]): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+    if (parsed.username || parsed.password) return null;
+    return origins.includes(parsed.origin) ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decide whether a request may act on the daemon's own machine.
+ *
+ * This guard covers the routes that mutate daemon-local state (library,
+ * connectors, db maintenance, shutdown). The desktop answer — "loopback peer
+ * naming the loopback daemon" — is false behind every reverse proxy, which
+ * forwards `Host: od.example.com`; requiring loopback there 403'd the whole
+ * library on the shape shape B documents as recommended.
+ *
+ * The check defends DNS rebinding, and a rebound page sends its *own* hostname
+ * and origin, neither of which an operator allowlisted: so a declared
+ * `OD_ALLOWED_ORIGINS` entry counts as naming this daemon in both places. A
+ * remote peer must additionally present a declared origin, so a forged
+ * loopback `Origin` from elsewhere buys nothing, and neither does an
+ * unauthenticated remote caller.
+ */
+export function validateLocalDaemonRequest(
+  req: Request,
+  env: NodeJS.ProcessEnv = process.env,
+): LocalDaemonValidation | LocalDaemonValidationError {
+  const { origins, hosts } = declaredOrigins(env);
 
   const host = normalizeLocalAuthority(req.get('host'));
-  if (!host || !isLoopbackHostname(host.hostname)) {
+  const hostAuthority = host && (host.port ? `${host.hostname}:${host.port}` : host.hostname);
+  const hostNamesDaemon = Boolean(
+    host
+    && (isLoopbackHostname(host.hostname)
+      || hosts.includes(hostAuthority as string)
+      || hosts.includes(host.hostname)),
+  );
+  if (!hostNamesDaemon) {
     return {
       ok: false,
-      message: 'request host must be a loopback daemon address',
+      message: 'request host must be a loopback daemon address or an origin declared in OD_ALLOWED_ORIGINS',
       details: { header: 'host' },
     };
   }
 
   const originHeader = req.get('origin');
-  if (originHeader !== undefined && !localOriginFromHeader(originHeader)) {
+  const declared = declaredOrigin(originHeader, origins);
+  const origin = declared ?? localOriginFromHeader(originHeader);
+  if (originHeader !== undefined && !origin) {
     return {
       ok: false,
-      message: 'request origin must be a loopback daemon origin',
+      message: 'request origin must be a loopback daemon origin or an origin declared in OD_ALLOWED_ORIGINS',
       details: { header: 'origin' },
     };
   }
 
-  return { ok: true, origin: localOriginFromHeader(originHeader) };
+  if (!isLoopbackPeerAddress(req.socket?.remoteAddress) && !declared) {
+    return {
+      ok: false,
+      message: 'request peer must be a loopback address unless the request declares an allowlisted origin',
+      details: { peer: 'remoteAddress' },
+    };
+  }
+
+  return { ok: true, origin };
 }
 
 export function requireLocalDaemonRequest(req: Request, res: Response, next: NextFunction): void | Response {

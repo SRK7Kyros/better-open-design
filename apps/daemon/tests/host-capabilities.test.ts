@@ -2,6 +2,7 @@
 // clicks them: a hosted daemon cannot open a native folder picker or read a
 // path the user typed on someone else's machine.
 
+import httpRequest from 'node:http';
 import type { Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -128,6 +129,70 @@ describe('POST /api/system/open-external on a remote daemon', () => {
       });
     } finally {
       delete process.env.OD_API_TOKEN;
+    }
+  });
+});
+
+describe('requireLocalDaemonRequest behind a reverse proxy', () => {
+  // nginx forwards `Host: $host`, so every route guarded by
+  // `requireLocalDaemonRequest` (library, connectors, db maintenance) used to
+  // answer 403 "request host must be a loopback daemon address" on the shape B
+  // deployment this fork documents as recommended.
+  function proxiedRequest(
+    baseUrl: string,
+    path: string,
+    headers: Record<string, string>,
+  ): Promise<{ status: number | undefined; body: string }> {
+    const target = new URL(baseUrl);
+    return new Promise((resolve, reject) => {
+      const req = httpRequest.request(
+        {
+          hostname: target.hostname,
+          port: target.port,
+          path,
+          method: 'GET',
+          headers,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => resolve({
+            status: res.statusCode,
+            body: Buffer.concat(chunks).toString('utf8'),
+          }));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('accepts the proxied host and origin declared in OD_ALLOWED_ORIGINS', async () => {
+    process.env.OD_ALLOWED_ORIGINS = 'https://od.example.com';
+    try {
+      const baseUrl = await start();
+      const allowed = await proxiedRequest(baseUrl, '/api/library/connection', {
+        host: 'od.example.com',
+        origin: 'https://od.example.com',
+      });
+      expect(allowed.status).toBe(200);
+
+      // A rebound page sends its own hostname and origin; the origin middleware
+      // rejects the pair first, and the host check is the second wall for a
+      // request that carries no origin at all.
+      const rebound = await proxiedRequest(baseUrl, '/api/library/connection', {
+        host: 'attacker.example',
+      });
+      expect(rebound.status).toBe(403);
+      expect(rebound.body).toContain('request host must be a loopback daemon address');
+
+      const reboundWithOrigin = await proxiedRequest(baseUrl, '/api/library/connection', {
+        host: 'attacker.example',
+        origin: 'https://attacker.example',
+      });
+      expect(reboundWithOrigin.status).toBe(403);
+    } finally {
+      delete process.env.OD_ALLOWED_ORIGINS;
     }
   });
 });
