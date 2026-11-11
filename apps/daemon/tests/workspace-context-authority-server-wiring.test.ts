@@ -55,8 +55,13 @@ afterEach(async () => {
       await new Promise<void>((resolve) => current.close(() => resolve()));
     }
   }
-  if (scratch) await rm(scratch, { recursive: true, force: true });
-  scratch = null;
+  // Restore this file's process-global footprint BEFORE the temp tree. A
+  // diagnostics writer can still be flushing into `<scratch>/data` after the
+  // server has shut down, so the removal below intermittently threw ENOTEMPTY
+  // — and while it came last in the old order, that throw skipped the metric
+  // registry reset, so the next test re-registered the same prom-client
+  // metrics and failed with "a metric with the name ... has already been
+  // registered". One race, two red tests, only in a full-suite run.
   for (const [key, value] of savedEnv) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -65,6 +70,11 @@ afterEach(async () => {
   vi.restoreAllMocks();
   metricRegistry.clear();
   vi.resetModules();
+  if (scratch) {
+    const dir = scratch;
+    scratch = null;
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 }, 30_000);
 
 describe('server workspace context authority wiring', () => {

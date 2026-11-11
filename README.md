@@ -108,6 +108,44 @@ pnpm --filter @open-design/web test     # render-mode, hand-off, api-origin
 pnpm --filter @open-design/daemon test  # cors-allowlist, origin-validation
 ```
 
+### The suites are large — shard them, and use the parallel config
+
+There is no aggregate `test` script at the root; "run the tests" means the two
+commands above, over 1421 web files (~13.1k cases) and 1062 daemon files
+(~11.8k cases), with `e2e/` (134 files) and the Playwright groups on top. CI
+never runs that as one job: `ci.yml` shards daemon 4× (15 min budget each) and
+web 2× (20 min), and `.github/scripts/scopes.py` / `convergence.py` skip or
+reuse workloads whose paths did not change.
+
+Measured on a 4-core ARM VM (one shard of each, `--shard=1/4`):
+
+| Suite | Files / cases | Wall clock | Full suite, extrapolated |
+|---|---|---|---|
+| `apps/web`, `--maxWorkers=2` | 356 / 3938 | 416 s | ~28 min |
+| `apps/daemon`, serial config | 266 / 4025 | 1142 s | ~76 min |
+| `apps/daemon`, `vitest.parallel.config.ts`, 3 workers | 266 / 4025 | 485 s | ~32 min |
+
+`apps/daemon` defaults to one file at a time (`fileParallelism: false`) because
+its suites mutate `process.env` / `PATH` and bind real servers. Upstream also
+ships `apps/daemon/vitest.parallel.config.ts`, and
+`.github/actions/configure-ci-parallelism` exports `OD_CI_DAEMON_MAX_WORKERS`
+for it — but nothing has ever passed `-c vitest.parallel.config.ts`, so the fast
+config was unreachable. This fork wires it up:
+
+```bash
+pnpm --filter @open-design/daemon test:parallel      # whole suite, parallel
+# or one shard, sized from nproc:
+OD_CI_DAEMON_MAX_WORKERS=3 pnpm --filter @open-design/daemon exec vitest \
+  run -c vitest.parallel.config.ts --shard=1/4
+```
+
+The parallel config also removes a flake: serial runs put every file in the same
+worker, so a leftover diagnostics write made `workspace-context-authority-server-wiring`
+fail its `rm` teardown in full-suite runs (green standalone). Its teardown now
+restores `prom-client`'s registry and the module cache before touching the temp
+tree, so a lost race can no longer cascade into "a metric ... has already been
+registered" in the next case.
+
 ## Staying rebaseable
 
 This fork tracks upstream releases tag by tag, on a branch per review round:
