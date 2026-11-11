@@ -133,5 +133,6 @@ handing back a session that cannot work.
 | `OD_HOSTED` | daemon | `1` when the daemon runs on a different machine than the browser, including behind a *local* reverse proxy — the peer looks loopback there, so the daemon cannot infer it. Makes `GET /api/host-capabilities` report `folderPicker`/`localFolders`/`systemTerminal` as unavailable |
 | `OD_WEB_BASE_PATH` | web build | mount the export under a sub-path (`/od`) without editing links; Next prefixes routes, chunks and assets |
 | `OD_SESSION_TTL_HOURS` | daemon | lifetime of the browser session cookie minted by `POST /api/auth/session`; default `12` |
+| `OD_TRUSTED_PROXIES` | daemon | comma-separated proxy addresses allowed to state the client's address in `X-Forwarded-For` (loopback peers are always trusted). Without it, every browser behind a *remote* proxy shares one unlock rate-limit bucket |
 | `OD_BIND_HOST` | daemon | interface to bind; keep `127.0.0.1` behind a proxy |
 | `OD_WEB_PORT` | daemon | extra port treated as same-origin (proxy-fronted single-process setups) |

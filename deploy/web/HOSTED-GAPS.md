@@ -26,6 +26,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
 | 8 | The editor hand-off surface advertises editors that spawn on the server | ~~P1~~ **fixed** | B, C |
 | 9 | `requireLocalDaemonRequest` rejects every proxy-shaped `Host` | ~~P0~~ **fixed** | B, C |
+| 10 | Unlock attempts are bucketed per proxy socket, not per browser | ~~P1~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
@@ -253,6 +254,23 @@ declared origin, so a forged loopback `Origin` from elsewhere buys nothing.
 
 ---
 
+## 10. Unlock attempts were bucketed per proxy socket — fixed
+
+`POST /api/auth/session` rate-limits failed unlocks to 10 per 5 minutes, keyed on
+`req.socket.remoteAddress`. Behind a proxy that address is the proxy's, so one
+browser's ten typos locked **everybody** out for five minutes, and an
+unauthenticated attacker on the internet could take the login surface down with
+ten requests — a DoS for the price of a for-loop.
+
+The key is now the client address the trusted proxy appended to
+`X-Forwarded-For` (the last entry — everything to its left is client-supplied),
+and only when the peer can plausibly be that proxy: loopback, or an explicit
+`OD_TRUSTED_PROXIES` entry. A direct caller cannot forge its way into a fresh
+bucket. Covered by `apps/daemon/tests/daemon-session.test.ts`, including a
+server whose peer is forced non-loopback to prove the header is ignored there.
+
+---
+
 ## What is verified working
 
 - CORS + preflight for `OD_ALLOWED_ORIGINS` on `/api`, `/artifacts`,
@@ -282,6 +300,10 @@ declared origin, so a forged loopback `Origin` from elsewhere buys nothing.
 - `GET /api/editors` returns the real catalogue locally and
   `{ editors: [], platform: 'unknown' }` to a remote peer, and `/open-in`
   answers `501 HANDOFF_UNAVAILABLE` there (same test file).
+- An expiring session does not strand the app: a 401 from a daemon request
+  re-opens the unlock form *over* the running workspace
+  (`apps/web/tests/components/DaemonAuthGate.test.tsx`), and the exchange
+  endpoint's own 401 never triggers it.
 - A proxy-shaped `Host`/`Origin` pair declared in `OD_ALLOWED_ORIGINS` reaches
   `GET /api/library/connection` with `200`, while a rebound host is still
   `403` — end to end against a real server

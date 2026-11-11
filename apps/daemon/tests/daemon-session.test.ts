@@ -198,3 +198,70 @@ describe('session routes', () => {
     });
   });
 });
+
+// Behind a reverse proxy every browser shares the proxy's socket address, so a
+// per-socket bucket made ten typos lock out *everyone* for five minutes — and
+// made an unauthenticated login DoS a ten-request exercise.
+describe('unlock attempts behind a reverse proxy', () => {
+  const badAttempt = async (base: string, forwardedFor?: string): Promise<number> => {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (forwardedFor) headers['x-forwarded-for'] = forwardedFor;
+    const res = await fetch(`${base}/api/auth/session`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token: 'nope' }),
+    });
+    return res.status;
+  };
+
+  it('buckets a proxied client by its forwarded address, not by the proxy', async () => {
+    await withRoutes({ authEnabled: true }, async (base) => {
+      for (let i = 0; i < 10; i += 1) {
+        expect(await badAttempt(base, '203.0.113.10')).toBe(401);
+      }
+      expect(await badAttempt(base, '203.0.113.10')).toBe(429);
+      // A different browser arriving through the same proxy keeps its own budget.
+      expect(await badAttempt(base, '203.0.113.11')).toBe(401);
+    });
+  });
+
+  it('reads the address the proxy appended, not the one the client claimed', async () => {
+    await withRoutes({ authEnabled: true }, async (base) => {
+      for (let i = 0; i < 10; i += 1) {
+        expect(await badAttempt(base, `198.51.100.${i}, 203.0.113.20`)).toBe(401);
+      }
+      // Same real client, different claim in front: still the same bucket.
+      expect(await badAttempt(base, '192.0.2.99, 203.0.113.20')).toBe(429);
+      expect(await badAttempt(base, '203.0.113.21')).toBe(401);
+    });
+  });
+
+  it('ignores a forwarded header that did not come from a proxy', async () => {
+    const app = express();
+    app.use(express.json());
+    registerDaemonSessionRoutes(app, {
+      apiToken: TOKEN,
+      apiTokenAuthEnabled: true,
+      isTrustedPeer: () => false,
+      hasValidAuthorization: () => false,
+    });
+    const server: Server = createServer(app);
+    server.prependListener('connection', (socket) => {
+      Object.defineProperty(socket, 'remoteAddress', {
+        configurable: true,
+        value: '203.0.113.7',
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        expect(await badAttempt(base, `198.51.100.${i}`)).toBe(401);
+      }
+      expect(await badAttempt(base, '198.51.100.99')).toBe(429);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

@@ -1,6 +1,8 @@
+import net from 'node:net';
 import type { Express, Request } from 'express';
 
 import { apiTokenEquals } from '../api-token-auth.js';
+import { isLoopbackPeerAddress } from '../http/local-daemon-request.js';
 import {
   clearSessionCookie,
   daemonSessionMatches,
@@ -48,8 +50,30 @@ export function registerDaemonSessionRoutes(
   const env = deps.env ?? process.env;
   const attempts = new Map<string, { count: number; resetAt: number }>();
 
+  /**
+   * Behind a reverse proxy every browser arrives from the proxy's socket
+   * address, so a bucket keyed on it turns ten typos into a five-minute outage
+   * for everyone — and an unauthenticated login DoS into ten requests. Trust
+   * `X-Forwarded-For` only from a peer that can plausibly be the proxy (loopback
+   * or an explicit `OD_TRUSTED_PROXIES` entry), and read the address the proxy
+   * *appended*: everything to its left is client-supplied.
+   */
+  const forwardedClient = (req: Request): string | null => {
+    const peer = String(req.socket?.remoteAddress ?? '');
+    const trustedProxies = String(env.OD_TRUSTED_PROXIES ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (!isLoopbackPeerAddress(peer) && !trustedProxies.includes(peer)) return null;
+    const header = req.get('x-forwarded-for');
+    if (!header) return null;
+    const entries = header.split(',').map((entry) => entry.trim()).filter(Boolean);
+    const last = entries.at(-1)?.replace(/^\[|\]$/g, '');
+    return last && net.isIP(last) ? last : null;
+  };
+
   const clientKey = (req: Request): string =>
-    String(req.socket?.remoteAddress ?? req.ip ?? 'unknown');
+    forwardedClient(req) ?? String(req.socket?.remoteAddress ?? req.ip ?? 'unknown');
 
   const tooManyAttempts = (req: Request): boolean => {
     const bucket = attempts.get(clientKey(req));
