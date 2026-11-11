@@ -2450,9 +2450,15 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           and the design system sits beside the type pill (per product:
           绿色 pill 后面跟设计系统 icon). */}
       <div className="home-hero__workdir-row">
-        {onPickWorkingDir ? (
+        {/* A hosted daemon cannot open a folder dialog on this desktop, and its
+            "recent folders" would be server paths. With nothing selected the row
+            is only a button that silently does nothing, so it is hidden; with a
+            directory already linked it stays, because that is the only way to
+            clear it. */}
+        {onPickWorkingDir && (hostCapabilities?.folderPicker !== false || workingDir) ? (
           <WorkingDirPicker
             className="home-hero__working-dir-picker"
+            pickerAvailable={hostCapabilities?.folderPicker !== false}
             /* Docked at the foot of the community view, a downward panel opens
                straight off the bottom of the window — so this one hangs UP and
                over the composer instead. Home's copy of the same picker sits

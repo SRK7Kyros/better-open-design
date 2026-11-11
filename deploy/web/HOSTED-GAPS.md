@@ -22,7 +22,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 3 | Preview documents forbid being framed cross-origin | ~~P0~~ **fixed** | C |
 | 4 | Browser-native subresource loads bypass the URL rewriter | ~~P1~~ **fixed** | C |
 | 5 | `/api/dialog/open-folder` is loopback/same-origin only | ~~P1~~ **fixed** | B, C |
-| 6 | Local-filesystem endpoints assume browser and daemon share a machine | ~~P1~~ **partly fixed** | B, C |
+| 6 | Local-filesystem endpoints assume browser and daemon share a machine | ~~P1~~ **fixed** | B, C |
 | 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
 | 8 | The editor hand-off surface advertises editors that spawn on the server | ~~P1~~ **fixed** | B, C |
 | 9 | `requireLocalDaemonRequest` rejects every proxy-shaped `Host` | ~~P0~~ **fixed** | B, C |
@@ -153,36 +153,36 @@ import routes already accept a path string, so the picker is only sugar — the
 follow-up is to render that field when `folderPicker` is false rather than
 letting the action end at a message.
 
-## 6. Local-filesystem endpoints assume one machine — partly fixed
+## 6. Local-filesystem endpoints assumed one machine — fixed
 
-Same class, no crash, but the UI promises something the deployment cannot
-deliver:
+The UI offered operations whose subject lives on the daemon's disk. Two were
+real, two were listed here by mistake, and the honest answer differs per row:
 
-| Endpoint | Assumption |
-|---|---|
-| `POST /api/dir-exists` | the typed path exists on the daemon host |
-| `POST /api/design-systems/import/local` | the folder is on the daemon host |
-| `POST /api/plugins/upload-folder` | the folder is on the daemon host |
-| `POST /api/agents/:agentId/oauth-launch` | a desktop session exists for `agy` |
-| `GET /api/projects/:id/files` | the project tree is local-readable |
+| Endpoint | What it actually does | Hosted answer |
+|---|---|---|
+| `POST /api/dir-exists` | stats a path the user typed, to flag a linked working directory that was deleted | correct as-is: the path *is* on the daemon, and the check reports on the daemon |
+| `POST /api/design-systems/import/local` | reads a project folder from the daemon's disk | **label it**: the field now says the path is read on the daemon's machine |
+| `POST /api/plugins/upload-folder` | uploads the picked folder's **file contents** as multipart | already works hosted — nothing to fix (it was wrongly listed here) |
+| `POST /api/agents/:agentId/oauth-launch` | spawns a system terminal on the daemon host | no UI calls it any more; `onLaunchTerminalAuth` / `onLaunchAntigravityOauth` are dead props, not a hosted gap |
+| `GET /api/projects/:id/files` | serves the project tree from the daemon's disk | already correct: the daemon is the one reading it |
 
-The capability probe now exists and the dead affordances are gone:
+What changed:
 
-- `useOpenFolderImport` (`components/useOpenFolderImport.ts`) reports
-  `manualEntry` when the daemon is remote, and the New Project panel renders a
-  **folder path on the server** field instead of the picker button
-  (`newproj.serverFolderLabel` / `.serverFolderPlaceholder` /
-  `.importServerFolder`, all 19 locales).
-- The composer's *Link local code* entry is hidden rather than left to fail:
-  `components/ChatComposer.tsx` and `components/HomeHero.tsx` pass `undefined`
-  to `ComposerPlusMenu` when `folderPicker` is false.
+- `DesignSystemsSection` probes `/api/host-capabilities` and, when
+  `folderPicker` is false, prints `settings.designSystemsLocalServerHint` under
+  the local-import field ("the path is read on the daemon's machine") in all 19
+  locales.
+- `WorkingDirPicker` no longer offers **Choose folder** when the daemon cannot
+  open a dialog on this desktop — `openFolderDialog` already returned `null`
+  there, so the row was a click that did nothing. It shows
+  `homeWorkingDir.serverOnly` instead, and still lists recent (server) folders
+  and clears the current selection. `HomeHero` hides the trigger entirely when
+  no directory is linked, since the panel would have nothing to offer.
 
-Still open, and deliberately so — these are *server-side* operations, so the
-honest answer is a label, not a hidden feature: `/api/dir-exists`,
-`/api/design-systems/import/local`, `/api/plugins/upload-folder` and
-`/api/agents/:id/oauth-launch` all act on the daemon host. A hosted UI should
-say "path on the server" next to those fields (`oauth-launch` is desktop-only
-and has no hosted equivalent).
+Tests: `apps/web/tests/components/DesignSystemsSection.hosted-hint.test.tsx`
+(hosted / same-machine / GitHub+shadcn sources) and
+`apps/web/tests/components/WorkingDirPicker.hosted.test.tsx` (picker row vs
+note, recents still usable).
 
 ## 7. No `basePath` support — fixed
 

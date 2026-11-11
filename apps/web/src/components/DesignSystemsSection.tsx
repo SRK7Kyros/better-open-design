@@ -14,6 +14,7 @@ import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { Icon } from './Icon';
 import { orderDesignSystemGroups } from './design-system-group-order';
 import { AnimatePresence } from 'motion/react';
+import { useHostCapabilities } from '../hooks/useHostCapabilities';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 
@@ -49,6 +50,7 @@ export function DesignSystemsSection({
   onDesignSystemImportRebuildJob,
 }: Props) {
   const t = useT();
+  const hostCapabilities = useHostCapabilities();
   const renameTitleId = useId();
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
@@ -463,6 +465,15 @@ export function DesignSystemsSection({
                           : t('settings.designSystemsImportProject')}
                   </button>
                 </div>
+                {/* The daemon reads this path from its own filesystem. On a
+                    hosted deployment that is not the machine the user is
+                    sitting at, and a bare `/path/to/project` reads as if it
+                    were — say so instead of failing later with ENOENT. */}
+                {importSource === 'local' && hostCapabilities?.folderPicker === false ? (
+                  <p className="library-install-hint">
+                    {t('settings.designSystemsLocalServerHint')}
+                  </p>
+                ) : null}
               </div>
             </div>
             {importError ? <p className="library-install-error">{importError}</p> : null}

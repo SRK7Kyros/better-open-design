@@ -804,6 +804,7 @@ export interface Dict {
   'settings.designSystemsCraftAccessibility': string;
   'settings.designSystemsGithubUrl': string;
   'settings.designSystemsProjectPath': string;
+  'settings.designSystemsLocalServerHint': string;
   'settings.designSystemsImportGithub': string;
   'settings.designSystemsImportProject': string;
   'settings.designSystemsImportedStatus': string;
@@ -1541,6 +1542,7 @@ export interface Dict {
   'homeWorkingDir.clear': string;
   'homeWorkingDir.hint': string;
   'homeWorkingDir.missing': string;
+  'homeWorkingDir.serverOnly': string;
   'homeWorkingDir.applyFailed': string;
   'workingDirPicker.title': string;
   'workingDirPicker.homeTitle': string;

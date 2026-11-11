@@ -14,6 +14,13 @@ interface Props {
   recentDirs: string[];
   /** Open the native folder picker. */
   onPickDirectory: () => void;
+  /**
+   * Whether the daemon can open a dialog on the user's desktop. A hosted
+   * daemon cannot: the folder it would pick is on *its* filesystem, so the row
+   * is replaced with a note instead of a button that silently does nothing
+   * (`openFolderDialog` answers null when the capability is false).
+   */
+  pickerAvailable?: boolean;
   /** Re-select a previously used directory. */
   onSelectRecent: (dir: string) => void;
   /** Clear the current selection. Only reachable when `workingDir` is set. */
@@ -62,6 +69,7 @@ export function WorkingDirPicker({
   workingDir,
   recentDirs,
   onPickDirectory,
+  pickerAvailable = true,
   onSelectRecent,
   onClear,
   className,
@@ -171,19 +179,25 @@ export function WorkingDirPicker({
           role="menu"
           data-testid="working-dir-panel"
         >
-          <button
-            type="button"
-            role="menuitem"
-            className={styles.item}
-            data-testid="working-dir-pick"
-            onClick={() => {
-              setOpen(false);
-              onPickDirectory();
-            }}
-          >
-            <Icon name="folder-2" size={14} className={styles.itemIcon} />
-            <span>{workingDir ? t('homeWorkingDir.replace') : t('homeWorkingDir.pick')}</span>
-          </button>
+          {pickerAvailable ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={styles.item}
+              data-testid="working-dir-pick"
+              onClick={() => {
+                setOpen(false);
+                onPickDirectory();
+              }}
+            >
+              <Icon name="folder-2" size={14} className={styles.itemIcon} />
+              <span>{workingDir ? t('homeWorkingDir.replace') : t('homeWorkingDir.pick')}</span>
+            </button>
+          ) : (
+            <p className={styles.serverOnly} data-testid="working-dir-server-only">
+              {t('homeWorkingDir.serverOnly')}
+            </p>
+          )}
 
           {/* The submenu only exists when there is something to list: with no
               recent folders it opened onto a faint empty-state line, which

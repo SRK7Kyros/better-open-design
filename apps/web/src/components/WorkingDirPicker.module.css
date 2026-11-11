@@ -350,3 +350,15 @@
   white-space: nowrap;
 }
 
+
+/* Replaces the "Choose folder" row when the daemon cannot open a dialog on
+   this desktop: a hosted daemon's folders are on its own filesystem. Reads as
+   an explanation, not as a disabled button, so the panel still makes sense
+   when the only useful action left is clearing or re-picking a known path. */
+.serverOnly {
+  margin: 0;
+  padding: 8px 9px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
