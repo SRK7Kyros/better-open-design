@@ -9,15 +9,17 @@ afterEach(cleanup);
 
 function renderPicker(props: Partial<React.ComponentProps<typeof WorkingDirPicker>> = {}) {
   const onPickDirectory = vi.fn();
+  const onSelectRecent = vi.fn();
   render(
     <WorkingDirPicker
       workingDir={null}
       recentDirs={[]}
       onPickDirectory={onPickDirectory}
+      onSelectRecent={onSelectRecent}
       {...props}
     />,
   );
-  return { onPickDirectory };
+  return { onPickDirectory, onSelectRecent };
 }
 
 function openPanel(): void {
