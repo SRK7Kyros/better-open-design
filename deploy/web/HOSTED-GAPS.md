@@ -215,6 +215,15 @@ and `POST /api/projects/:id/open-in` answers
 `apps/daemon/src/http/host-locality.ts` — the same helper the capability probe
 uses, so `OD_HOSTED=1` covers the local-reverse-proxy case once.
 
+`POST /api/system/open-external` is the same class and needed its own answer,
+because the failure was silent rather than loud: it launched the URL in the
+*server's* browser, answered `200`, and `openExternalUrl` therefore returned
+`true` and never ran its `location.assign` fallback — the click did nothing and
+nothing explained why. It keeps the existing cross-origin `403` (a same-machine
+page from another origin must not drive it) and now adds `501
+OPEN_EXTERNAL_UNAVAILABLE` for a remote peer, which is exactly what makes the
+client's own navigation happen.
+
 ---
 
 ## What is verified working

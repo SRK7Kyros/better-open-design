@@ -106,3 +106,28 @@ describe('GET /api/editors on a remote daemon', () => {
     }
   });
 });
+
+describe('POST /api/system/open-external on a remote daemon', () => {
+  it('refuses to open a URL on the server and lets the client navigate itself', async () => {
+    process.env.OD_API_TOKEN = 'open-external-test-token';
+    try {
+      const baseUrl = await start();
+      makeConnectionsAppearNonLoopback(server!);
+      const resp = await fetch(`${baseUrl}/api/system/open-external`, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer open-external-test-token',
+          'content-type': 'application/json',
+          connection: 'close',
+        },
+        body: JSON.stringify({ url: 'https://example.com/upgrade' }),
+      });
+      expect(resp.status).toBe(501);
+      expect(await resp.json()).toMatchObject({
+        error: { code: 'OPEN_EXTERNAL_UNAVAILABLE' },
+      });
+    } finally {
+      delete process.env.OD_API_TOKEN;
+    }
+  });
+});

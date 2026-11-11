@@ -3,6 +3,7 @@ import { parseStockSearchRequest, type StockSearchRequest } from '@open-design/c
 import { resolveProjectWritePath, validateProjectPath } from '../projects.js';
 import { stockSearch, StockSearchServiceError, StockSearchInputError } from '../media/stock-search.js';
 import { createStockRecorder } from '../media/stock-telemetry.js';
+import { isSameMachineRequest } from '../http/host-locality.js';
 import type { Express } from 'express';
 import type {
   HyperFramesScaffoldRequest,
@@ -993,6 +994,19 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
   app.post('/api/system/open-external', async (req, res) => {
     if (!isLocalSameOrigin(req, getResolvedPort())) {
       return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    // Launching a URL opens the *daemon's* browser. On a hosted deployment that
+    // tab is on a desktop nobody is looking at, while the client treats the 200
+    // as "opened" and never navigates itself; a 501 sends the caller to its own
+    // `location.assign` fallback.
+    if (!isSameMachineRequest(req)) {
+      return res.status(501).json({
+        ok: false,
+        error: {
+          code: 'OPEN_EXTERNAL_UNAVAILABLE',
+          message: 'This daemon runs on another machine: open the URL in this browser instead.',
+        },
+      });
     }
     try {
       const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
