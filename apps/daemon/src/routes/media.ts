@@ -1017,7 +1017,14 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
   // Native OS folder picker dialog. Returns { path: string | null }.
   app.post('/api/dialog/open-folder', async (req, res) => {
     if (!isLocalSameOrigin(req, getResolvedPort())) {
-      return res.status(403).json({ error: 'cross-origin request rejected' });
+      // 501, not 403: the picker would open on the daemon's desktop and return a
+      // path only that host understands, so this is a missing capability.
+      return res.status(501).json({
+        error: {
+          code: 'FOLDER_PICKER_UNAVAILABLE',
+          message: 'This daemon runs on another machine: type the folder path on the server instead.',
+        },
+      });
     }
     try {
       const selected = await openNativeFolderDialog();

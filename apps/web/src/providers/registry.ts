@@ -113,6 +113,7 @@ import {
 } from '../collab/workspace-identity';
 import { parseEntryIndexConflictDetails, PublicFilePublishError } from '../collab/public-file-publish';
 import { clientRequestIdHeaders, withDaemonFailure } from '../analytics/failure-detail';
+import { fetchHostCapabilities } from '../runtime/host-capabilities';
 import { randomUUID } from '../utils/uuid';
 
 /**
@@ -3500,6 +3501,11 @@ export async function renameProjectFile(
 }
 
 export async function openFolderDialog(options: { throwOnError?: boolean } = {}): Promise<string | null> {
+  const unavailable = 'This daemon runs on another machine: type the folder path on the server instead.';
+  if (!(await fetchHostCapabilities()).folderPicker) {
+    if (options.throwOnError) throw new Error(unavailable);
+    return null;
+  }
   try {
     const resp = await fetch('/api/dialog/open-folder', { method: 'POST' });
     if (!resp.ok) {

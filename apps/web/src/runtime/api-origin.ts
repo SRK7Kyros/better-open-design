@@ -108,6 +108,56 @@ export function rewriteApiUrl(target: string, apiBase: string, currentOrigin?: s
 
 type BrowserGlobal = Window & typeof globalThis;
 
+/**
+ * Attributes whose value the browser fetches or navigates to on its own, with
+ * no JavaScript in between. `fetch` and `EventSource` are patched separately;
+ * this set is what covers `<img src>`, `<video poster>`, `<iframe src>`,
+ * `<a href>` downloads and `<script src>`.
+ */
+const FETCHED_ATTRIBUTES = new Set(['src', 'href', 'poster', 'action', 'data-src']);
+
+const SUBRESOURCE_MARKER = '__odSubresourceRewriterInstalled';
+
+/**
+ * Rewrite daemon paths written straight into the DOM.
+ *
+ * The `fetch`/`EventSource` patches cannot help here: React sets `src="/api/…"`
+ * as an attribute and the browser starts the request itself, so in a split-origin
+ * deployment every artifact image, poster, download link and preview frame
+ * pointed at the *static host* and 404'd. There are 130+ such call sites across
+ * the tree, so rewriting them one by one would be both fragile and a permanent
+ * rebase conflict; the attribute setter is the single choke point.
+ *
+ * Only attributes that `rewriteApiUrl` recognises as daemon paths are touched,
+ * so third-party URLs, `blob:`, `data:` and anchors that point at the SPA keep
+ * their value. The rewrite is idempotent — a value that already starts with the
+ * base comes back unchanged — so re-setting an attribute cannot loop.
+ */
+export function installDaemonSubresourceRewriter(win: BrowserGlobal, apiBase: string): void {
+  const attributes = win.Element?.prototype;
+  if (!apiBase || typeof attributes?.setAttribute !== 'function') return;
+  const marked = attributes as unknown as Record<string, unknown>;
+  if (marked[SUBRESOURCE_MARKER]) return;
+
+  const currentOrigin = win.location?.origin;
+  const nativeSetAttribute = attributes.setAttribute;
+
+  const rewrite = (name: unknown, value: unknown): unknown => {
+    if (typeof name !== 'string' || typeof value !== 'string' || value.length === 0) return value;
+    if (!FETCHED_ATTRIBUTES.has(name.toLowerCase())) return value;
+    return rewriteApiUrl(value, apiBase, currentOrigin);
+  };
+
+  Object.defineProperty(attributes, 'setAttribute', {
+    configurable: true,
+    writable: true,
+    value(this: Element, name: string, value: string) {
+      return nativeSetAttribute.call(this, name, rewrite(name, value) as string);
+    },
+  });
+  marked[SUBRESOURCE_MARKER] = true;
+}
+
 function readRuntimeBase(win: BrowserGlobal): string {
   const doc = win.document as Document | undefined;
   const meta = doc?.querySelector?.('meta[name="od-api-base"]')?.getAttribute('content') ?? null;
@@ -132,6 +182,8 @@ export function installApiOriginRewriter(win?: BrowserGlobal): string {
   const apiBase = readRuntimeBase(target);
   marked.__odApiOriginInstalled = apiBase;
   if (!apiBase) return '';
+
+  installDaemonSubresourceRewriter(target, apiBase);
 
   const currentOrigin = target.location?.origin;
   const nativeFetch = target.fetch.bind(target);

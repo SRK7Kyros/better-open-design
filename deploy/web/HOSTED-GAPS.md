@@ -20,10 +20,10 @@ only with an operator workaround; **P2** is a sharp edge.
 | 1 | The web bundle has no way to send `OD_API_TOKEN` | ~~P0~~ **fixed** | B (token, no proxy auth), C |
 | 2 | `EventSource` cannot carry an `Authorization` header | ~~P0~~ **fixed** | C |
 | 3 | Preview documents forbid being framed cross-origin | ~~P0~~ **fixed** | C |
-| 4 | Browser-native subresource loads bypass the URL rewriter | P1 | C |
-| 5 | `/api/dialog/open-folder` is loopback/same-origin only | P1 | B, C |
+| 4 | Browser-native subresource loads bypass the URL rewriter | ~~P1~~ **fixed** | C |
+| 5 | `/api/dialog/open-folder` is loopback/same-origin only | ~~P1~~ **fixed** | B, C |
 | 6 | Local-filesystem endpoints assume browser and daemon share a machine | P1 | B, C |
-| 7 | No `basePath` support for serving the build under a sub-path | P2 | B, C |
+| 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
@@ -97,7 +97,7 @@ Note the remaining, *intentional* restriction on the same document:
 never runs artifact JavaScript. That is the design of the rendered transport —
 interactive previews go through `/api/projects/:id/files/:name/preview`.
 
-## 4. Browser-native subresource loads bypass the URL rewriter — P1
+## 4. Browser-native subresource loads bypass the URL rewriter — fixed
 
 `rewriteApiUrl` only sees `fetch`, `Request` and `EventSource`. Anything the
 markup loads directly — `<img src="/artifacts/…">`, `<video poster>`,
@@ -109,13 +109,22 @@ Measured: 25 places in `apps/web/src` return a template literal starting with
 `/api/` (asset and thumbnail builders), and `workspaceResourceUrl` has 29 call
 sites that deliberately stay relative.
 
-**Fix**: either route every one of those through a single
-`apiResourceUrl(path)` export of `api-origin.ts`, or install a
-`MutationObserver` on `src` / `href` / `poster` / `srcset` that applies
-`rewriteApiUrl` to the five daemon prefixes. The rewriter is the smaller diff
-and survives rebases; the helper is more predictable. Do one, not both.
+Both routes were on the table; the smaller diff won. There is no
+`MutationObserver` and no per-call-site helper — `installDaemonSubresourceRewriter`
+wraps `Element.prototype.setAttribute` and rewrites `src`, `href`, `poster`,
+`action` and `data-src` through the same `rewriteApiUrl` the transports use.
+React sets those attributes with `setAttribute`, so the rewrite happens *before*
+the browser starts the request, which a `MutationObserver` cannot promise.
 
-## 5. `/api/dialog/open-folder` is loopback/same-origin only — P1
+It is installed by `installApiOriginRewriter` and is a no-op when no
+`apiBase` resolves, so every same-origin deployment is untouched. The rewrite is
+idempotent (a value that already starts with the base is returned unchanged),
+which is what keeps a re-set attribute from looping, and values the rewriter does
+not recognise — third-party URLs, `blob:`, `data:`, SPA routes like
+`/projects/x` — keep their value because only the four daemon prefixes match.
+Covered by `apps/web/tests/runtime/api-origin-subresources.test.ts`.
+
+## 5. `/api/dialog/open-folder` is loopback/same-origin only — fixed
 
 `apps/daemon/src/routes/media.ts` guards the picker with
 `isLocalSameOrigin(req, getResolvedPort())` and otherwise answers
@@ -128,9 +137,17 @@ deployment property.
 It also cannot be made to work as-is: the dialog would appear on the *daemon's*
 desktop, and the path it returns is meaningful only to the daemon.
 
-**Fix**: answer `501 FOLDER_PICKER_UNAVAILABLE` with that explanation, and have
-`useOpenFolderImport` fall back to a text field for the server-side path (the
-import route already takes a path string, so the picker is only sugar).
+The daemon now answers `501 FOLDER_PICKER_UNAVAILABLE` with an explanation
+instead of `403 cross-origin request rejected`, and `GET /api/host-capabilities`
+lets the client know before the click: `{ sameMachine, folderPicker,
+localFolders, systemTerminal }`. `apps/web/src/runtime/host-capabilities.ts`
+probes it once per page load; `openFolderDialog` and `pickLocalFolderPath` stop
+before issuing a request that cannot succeed and raise the same explanation.
+
+Still open: no component offers a text field for the server-side path yet. The
+import routes already accept a path string, so the picker is only sugar — the
+follow-up is to render that field when `folderPicker` is false rather than
+letting the action end at a message.
 
 ## 6. Local-filesystem endpoints assume one machine — P1
 
@@ -150,16 +167,18 @@ that reports `folderPicker`, `localFolders`, `systemTerminal`, and hide/relabel
 the affordances instead of letting them 403. Cheaper interim: label the path
 fields "path on the server".
 
-## 7. No `basePath` support — P2
+## 7. No `basePath` support — fixed
 
 `apps/web/next.config.ts` sets neither `basePath` nor `assetPrefix`. The build
 assumes it is mounted at `/`: every chunk is `/_next/…`, the router owns `/`,
 and a reverse proxy that publishes it under `https://host/od/` serves a blank
 page and 404s on every asset.
 
-**Fix**: `basePath: process.env.OD_WEB_BASE_PATH` (Next rewrites `Link`/router
-and static paths for us) and mention it in the README's shape B section. The
-`apiBase` resolver already tolerates a path prefix.
+`apps/web/next.config.ts` now sets `basePath` from `OD_WEB_BASE_PATH`, so
+`https://host/od/` works without touching a single link: Next prefixes its own
+routes, chunks and assets from that value and the host mounts `out/` at the base
+path. Unset (the default) keeps `/`. The `apiBase` resolver already tolerates a
+path prefix, so a split origin can be `https://api.example.com/od` too.
 
 ---
 
@@ -182,3 +201,10 @@ and static paths for us) and mention it in the README's shape B section. The
 - Static export (`output: 'export'`, `trailingSlash: true`) plus a
   `try_files … /index.html` fallback on the host — deep links land on the SPA
   shell.
+- Daemon-owned subresources (`/api/…`, `/artifacts/…`, `/frames/…`,
+  `/plugins/…`) written straight into the DOM are moved to the daemon origin
+  before the browser fetches them, and non-daemon values are left alone
+  (`tests/runtime/api-origin-subresources.test.ts`).
+- `GET /api/host-capabilities` reports the same set from a loopback peer and
+  from a forced non-loopback one (`apps/daemon/tests/host-capabilities.test.ts`);
+  `OD_HOSTED=1` forces the remote answer when a local proxy hides the browser.

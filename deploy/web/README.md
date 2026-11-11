@@ -128,6 +128,8 @@ handing back a session that cannot work.
 | `OD_DAEMON_ORIGIN` | web (dev + proxy rewrites) | daemon origin `next dev` proxies to; default `http://127.0.0.1:$OD_PORT` |
 | `NEXT_PUBLIC_OD_API_BASE` | web build | absolute daemon base baked into the bundle |
 | `OD_ALLOWED_ORIGINS` | daemon | comma-separated browser origins allowed to call `/api`, to receive CORS headers, and to frame preview documents (`frame-ancestors`) |
+| `OD_HOSTED` | daemon | `1` when the daemon runs on a different machine than the browser, including behind a *local* reverse proxy — the peer looks loopback there, so the daemon cannot infer it. Makes `GET /api/host-capabilities` report `folderPicker`/`localFolders`/`systemTerminal` as unavailable |
+| `OD_WEB_BASE_PATH` | web build | mount the export under a sub-path (`/od`) without editing links; Next prefixes routes, chunks and assets |
 | `OD_SESSION_TTL_HOURS` | daemon | lifetime of the browser session cookie minted by `POST /api/auth/session`; default `12` |
 | `OD_BIND_HOST` | daemon | interface to bind; keep `127.0.0.1` behind a proxy |
 | `OD_WEB_PORT` | daemon | extra port treated as same-origin (proxy-fronted single-process setups) |

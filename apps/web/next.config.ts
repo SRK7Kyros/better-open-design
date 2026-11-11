@@ -89,6 +89,15 @@ const DIST_DIR = shouldStaticExport && !process.env.OD_WEB_DIST_DIR
   ? null
   : resolveDistDir('.next');
 
+// Publish the web build under a sub-path (`https://host/od/`) without rebuilding
+// every link by hand: Next prefixes its own routes, chunks and assets, and the
+// host mounts `out/` at the base path. Empty (the default) keeps `/`.
+const WEB_BASE_PATH = (() => {
+  const raw = (process.env.OD_WEB_BASE_PATH ?? '').trim();
+  if (!raw || raw === '/') return '';
+  return `/${raw.replace(/^\/+|\/+$/g, '')}`;
+})();
+
 function resolveDevTsconfigPath() {
   const configured = process.env.OD_WEB_TSCONFIG_PATH;
   if (!configured) return undefined;
@@ -230,6 +239,7 @@ const nextConfig: NextConfig = {
   // hosts like Vercel can publish the generated site directly. Server runtimes
   // still keep a predictable traced build directory for sidecar launchers.
   ...(DIST_DIR ? { distDir: DIST_DIR } : {}),
+  ...(WEB_BASE_PATH ? { basePath: WEB_BASE_PATH } : {}),
   ...(shouldStaticExport
     ? {
         output: 'export' as const,

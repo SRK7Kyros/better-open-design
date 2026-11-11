@@ -5,6 +5,7 @@ import { getCritiqueMetrics, register } from '../metrics/index.js';
 import { readConformanceHistory } from '../critique/conformance-history.js';
 import { evaluateRollout } from '../critique/ratchet.js';
 import { parseRolloutPhase } from '../critique/rollout.js';
+import { isLoopbackPeerAddress } from '../http/local-daemon-request.js';
 import {
   AgentCompanionSetupError,
   installDeepSeekHarnessCompanion,
@@ -57,6 +58,19 @@ export function registerDaemonRoutes(app: Express, deps: RegisterDaemonRoutesDep
           return 0;
         }
       })(),
+    });
+  });
+
+  app.get('/api/host-capabilities', (req, res) => {
+    // A local reverse proxy makes the peer loopback while the browser is remote.
+    const hosted = /^(1|true|yes|on)$/i.test(String(env.OD_HOSTED ?? '').trim());
+    const sameMachine = !hosted && isLoopbackPeerAddress(req.socket?.remoteAddress);
+    res.json({
+      ok: true,
+      sameMachine,
+      folderPicker: sameMachine,
+      localFolders: sameMachine,
+      systemTerminal: sameMachine,
     });
   });
 

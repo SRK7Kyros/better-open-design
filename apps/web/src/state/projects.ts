@@ -9,6 +9,7 @@ import type { QueuedSubmissionRequest, UserSubmissionReceipt } from "@open-desig
 
 import { coalescedGet, evictCoalescedGet } from '../lib/coalesced-get';
 import { isDaemonProxyConnectionFailure } from '../runtime/daemon-proxy-failure';
+import { fetchHostCapabilities } from '../runtime/host-capabilities';
 import { BackoffController, type BackoffOptions } from '../lib/backoff';
 import { markProjectCreatedByViewer } from '../collab/useProjectCollab';
 import {
@@ -935,6 +936,9 @@ export async function duplicateProject(
 }
 
 export async function pickLocalFolderPath(): Promise<string | null> {
+  if (!(await fetchHostCapabilities()).folderPicker) {
+    throw new Error('This daemon runs on another machine: type the folder path on the server instead.');
+  }
   const resp = await fetch('/api/dialog/open-folder', {
     method: 'POST',
   });
