@@ -24,6 +24,7 @@ only with an operator workaround; **P2** is a sharp edge.
 | 5 | `/api/dialog/open-folder` is loopback/same-origin only | ~~P1~~ **fixed** | B, C |
 | 6 | Local-filesystem endpoints assume browser and daemon share a machine | ~~P1~~ **partly fixed** | B, C |
 | 7 | No `basePath` support for serving the build under a sub-path | ~~P2~~ **fixed** | B, C |
+| 8 | The editor hand-off surface advertises editors that spawn on the server | ~~P1~~ **fixed** | B, C |
 
 ## 1. The web bundle had no way to send `OD_API_TOKEN` — fixed
 
@@ -195,6 +196,27 @@ path prefix, so a split origin can be `https://api.example.com/od` too.
 
 ---
 
+## 8. The editor hand-off surface spawns on the daemon — fixed
+
+Every entry in `apps/daemon/src/routes/host-tools.ts` is a process launch on the
+daemon host: `xdg-open` for the file manager, `/usr/bin/open -a` for macOS app
+bundles, `explorer` on Windows, `cursor`/`code`/`zed`/… for editors. The daemon
+advertised the whole catalogue to every peer, so a hosted browser got a
+hand-off menu listing programs installed on the *server*, and clicking one
+either launched something on the server's desktop or answered
+`409 EDITOR_NOT_AVAILABLE "<label> is not installed"` — which reads like a
+broken install rather than a deployment property.
+
+`GET /api/editors` now answers `{ editors: [], platform: 'unknown' }` to a peer
+that is not on the daemon's machine, which is exactly the shape the client
+already treats as "no hand-off surface" (the zero-launchable-editors branch),
+and `POST /api/projects/:id/open-in` answers
+`501 HANDOFF_UNAVAILABLE` instead of spawning. Locality is decided by
+`apps/daemon/src/http/host-locality.ts` — the same helper the capability probe
+uses, so `OD_HOSTED=1` covers the local-reverse-proxy case once.
+
+---
+
 ## What is verified working
 
 - CORS + preflight for `OD_ALLOWED_ORIGINS` on `/api`, `/artifacts`,
@@ -221,3 +243,6 @@ path prefix, so a split origin can be `https://api.example.com/od` too.
 - `GET /api/host-capabilities` reports the same set from a loopback peer and
   from a forced non-loopback one (`apps/daemon/tests/host-capabilities.test.ts`);
   `OD_HOSTED=1` forces the remote answer when a local proxy hides the browser.
+- `GET /api/editors` returns the real catalogue locally and
+  `{ editors: [], platform: 'unknown' }` to a remote peer, and `/open-in`
+  answers `501 HANDOFF_UNAVAILABLE` there (same test file).

@@ -24,6 +24,7 @@ import type {
   HostEditorsResponse,
   OpenProjectInEditorResponse,
 } from '@open-design/contracts';
+import { isSameMachineRequest } from '../http/host-locality.js';
 import type { RouteDeps } from '../server-context.js';
 import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
@@ -304,8 +305,16 @@ export function registerHostToolsRoutes(app: Express, ctx: RegisterHostToolsRout
   const { getProject } = ctx.projectStore;
   const { resolveProjectDir } = ctx.projectFiles;
 
-  app.get('/api/editors', async (_req, res) => {
+  app.get('/api/editors', async (req, res) => {
     try {
+      // Every entry spawns a process on the daemon host (`xdg-open cursor`,
+      // `/usr/bin/open -a`, `explorer`). A browser on another machine cannot use
+      // any of them, and advertising them turns the hand-off menu into a list of
+      // editors the user does not have. An empty catalogue is what makes the
+      // client drop the whole surface.
+      if (!isSameMachineRequest(req)) {
+        return res.json({ editors: [], platform: 'unknown' } satisfies HostEditorsResponse);
+      }
       const platform = currentPlatform();
       const filtered = CATALOGUE.filter((entry) => applicableForPlatform(entry, platform));
       const editors: HostEditor[] = await Promise.all(
@@ -330,6 +339,14 @@ export function registerHostToolsRoutes(app: Express, ctx: RegisterHostToolsRout
 
   app.post('/api/projects/:id/open-in', async (req, res) => {
     try {
+      if (!isSameMachineRequest(req)) {
+        return sendApiError(
+          res,
+          501,
+          'HANDOFF_UNAVAILABLE',
+          'This daemon runs on another machine, so it cannot open an editor on yours.',
+        );
+      }
       const projectId = req.params.id;
       const editorId = (req.body?.editorId ?? '') as HostEditorId;
       if (!editorId) {

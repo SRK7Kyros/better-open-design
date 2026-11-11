@@ -72,3 +72,37 @@ describe('GET /api/host-capabilities', () => {
     }
   });
 });
+
+describe('GET /api/editors on a remote daemon', () => {
+  it('advertises no editor to a peer that cannot use one', async () => {
+    process.env.OD_API_TOKEN = 'editors-test-token';
+    try {
+      const baseUrl = await start();
+      // `connection: close` keeps undici from reusing a pooled socket opened
+      // before the peer override, which would make the peer look loopback.
+      const headers = { authorization: 'Bearer editors-test-token', connection: 'close' };
+
+      const local = await fetch(`${baseUrl}/api/editors`, { headers });
+      expect(local.status).toBe(200);
+      const localBody = (await local.json()) as { editors: unknown[]; platform: string };
+      expect(localBody.platform).not.toBe('unknown');
+
+      makeConnectionsAppearNonLoopback(server!);
+      const remote = await fetch(`${baseUrl}/api/editors`, { headers });
+      expect(remote.status).toBe(200);
+      expect(await remote.json()).toEqual({ editors: [], platform: 'unknown' });
+
+      const openIn = await fetch(`${baseUrl}/api/projects/anything/open-in`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ editorId: 'file-manager' }),
+      });
+      expect(openIn.status).toBe(501);
+      expect(await openIn.json()).toMatchObject({
+        error: { code: 'HANDOFF_UNAVAILABLE' },
+      });
+    } finally {
+      delete process.env.OD_API_TOKEN;
+    }
+  });
+});
