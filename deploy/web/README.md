@@ -93,12 +93,16 @@ which both permits the request (`origin-validation.ts`) and emits the CORS
 response headers plus the preflight answer (`apps/daemon/src/http/cors-allowlist.ts`).
 Credentials are allowed for exactly those origins, never `*`.
 
-Known limit, by design: the rewrite covers the two JS transports, not
-browser-native subresource loads. An artifact iframe that links `/api/projects/x/raw/page.html`
-*is* covered (the iframe's `src` is set from a rewritten string only if the app
-built it through `fetch`), but a `<img src="/artifacts/…">` written literally in
-JSX is not. If you need the preview surface, use shape B, or proxy those four
-prefixes on the static host as well.
+Shape C is not finished yet: the rewriter covers `fetch` and `EventSource`, not
+browser-native subresource loads, and the client has no way to present
+`OD_API_TOKEN`. Both are tracked — with the fix and its evidence — in
+[`HOSTED-GAPS.md`](./HOSTED-GAPS.md). Until gaps 1, 2 and 4 there are closed,
+use shape B for anything where the preview panel or chat streaming matters.
+
+`OD_ALLOWED_ORIGINS` has to be set here even when the framing page and the
+daemon are the same origin: it is the source of the `frame-ancestors` policy on
+preview documents (`apps/daemon/src/http/frame-ancestors.ts`), so without it a
+split-origin preview renders as an empty canvas.
 
 ---
 
@@ -108,6 +112,6 @@ prefixes on the static host as well.
 |---|---|---|
 | `OD_DAEMON_ORIGIN` | web (dev + proxy rewrites) | daemon origin `next dev` proxies to; default `http://127.0.0.1:$OD_PORT` |
 | `NEXT_PUBLIC_OD_API_BASE` | web build | absolute daemon base baked into the bundle |
-| `OD_ALLOWED_ORIGINS` | daemon | comma-separated browser origins allowed to call `/api` and to receive CORS headers |
+| `OD_ALLOWED_ORIGINS` | daemon | comma-separated browser origins allowed to call `/api`, to receive CORS headers, and to frame preview documents (`frame-ancestors`) |
 | `OD_BIND_HOST` | daemon | interface to bind; keep `127.0.0.1` behind a proxy |
 | `OD_WEB_PORT` | daemon | extra port treated as same-origin (proxy-fronted single-process setups) |

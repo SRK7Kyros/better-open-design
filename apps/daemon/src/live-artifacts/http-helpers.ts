@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { ConnectorServiceError } from '../connectors/service.js';
 import { sendApiError } from '../http/api-errors.js';
+import { frameAncestorsDirective } from '../http/frame-ancestors.js';
 import { LiveArtifactRefreshAbortError } from './refresh.js';
 import { LiveArtifactRefreshUnavailableError } from './refresh-service.js';
 import {
@@ -56,7 +57,7 @@ export function setLiveArtifactPreviewHeaders(res: Response): void {
       "object-src 'none'",
       "connect-src 'none'",
       "form-action 'none'",
-      "frame-ancestors 'self'",
+      `frame-ancestors ${frameAncestorsDirective()}`,
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "style-src 'unsafe-inline'",

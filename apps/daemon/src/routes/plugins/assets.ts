@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import type * as BetterSqlite3 from 'better-sqlite3';
 import path from 'node:path';
+import { frameAncestorsDirective } from '../../http/frame-ancestors.js';
 import { inlinePluginPreviewFonts } from './preview-fonts.js';
 import { findRealTagEnd, HTML_TAG_PATTERNS, prependAfterDoctype } from '@open-design/contracts/runtime/html-injection-points';
 import type { WorkspaceCollabContext } from '@open-design/contracts';
@@ -195,7 +196,7 @@ export function registerPluginAssetRoutes(app: Express, deps: RegisterPluginAsse
           } catch {}
         }
       }
-      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; frame-ancestors 'self'");
+      res.setHeader('Content-Security-Policy', `default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; frame-ancestors ${frameAncestorsDirective()}`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       const ext = path.extname(contentPath).toLowerCase();
       const ct = ext === '.html' ? 'text/html; charset=utf-8' : ext === '.js' ? 'application/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : ext === '.md' || ext === '.markdown' ? 'text/markdown; charset=utf-8' : ext === '.svg' ? 'image/svg+xml' : ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'application/octet-stream';
@@ -411,7 +412,7 @@ export function registerPluginAssetRoutes(app: Express, deps: RegisterPluginAsse
       } catch {
         return res.status(404).json({ error: 'asset not found' });
       }
-      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; frame-ancestors 'self'");
+      res.setHeader('Content-Security-Policy', `default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; frame-ancestors ${frameAncestorsDirective()}`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       const ext = path.extname(resolved).toLowerCase();
       // Media seeking requires byte ranges and the media MIME type. Path and
