@@ -5,8 +5,17 @@ import dynamic from 'next/dynamic';
 import { installErrorHandlers } from '../../src/analytics/error-tracking';
 import { MatrixLoader } from '../../src/components/MatrixLoader';
 import { installWebObservability } from '../../src/observability/install';
+import { installApiOriginRewriter } from '../../src/runtime/api-origin';
 import { installChatScrollExperiments } from '../../src/runtime/chat-scroll-experiments';
 import { installChatScrollTakeover } from '../../src/runtime/chat-scroll-takeover';
+
+// Point the client at its daemon before anything can fetch. Same-origin
+// deployments (every existing shape) resolve to '' and this call leaves both
+// transports untouched; a split-origin build resolves `NEXT_PUBLIC_OD_API_BASE`
+// or the `<meta name="od-api-base">` the deploy step wrote and rewrites only
+// daemon paths. Must run ahead of `installErrorHandlers()` so a failing first
+// request is reported against the real URL.
+installApiOriginRewriter();
 
 // Install browser exception handlers at module-load time, before any other
 // client code can throw. The hooks buffer events until AnalyticsProvider

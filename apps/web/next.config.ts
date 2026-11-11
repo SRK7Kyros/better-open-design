@@ -10,7 +10,12 @@ import { fileURLToPath } from 'node:url';
 // the same env so /api, /artifacts, and /frames always reach the right
 // daemon instance during `next dev`.
 const DAEMON_PORT = Number(process.env.OD_PORT) || 7456;
-const DAEMON_ORIGIN = `http://127.0.0.1:${DAEMON_PORT}`;
+// The web build is decoupled from the daemon: it can be developed, built, and
+// served from any origin as long as it knows where the daemon lives. In dev the
+// rewrites below proxy the daemon surface, so `OD_DAEMON_ORIGIN` is what lets
+// `next dev` run against a daemon that is not on this machine's loopback.
+const DAEMON_ORIGIN = (process.env.OD_DAEMON_ORIGIN?.trim() || `http://127.0.0.1:${DAEMON_PORT}`)
+  .replace(/\/+$/, '');
 
 // The regular CLI build still ships as a static export so the `od` daemon can
 // serve a single-process production build. Packaged desktop builds opt into a
@@ -249,6 +254,7 @@ const nextConfig: NextConfig = {
             { source: '/api/:path*', destination: `${DAEMON_ORIGIN}/api/:path*` },
             { source: '/artifacts/:path*', destination: `${DAEMON_ORIGIN}/artifacts/:path*` },
             { source: '/frames/:path*', destination: `${DAEMON_ORIGIN}/frames/:path*` },
+            { source: '/plugins/:path*', destination: `${DAEMON_ORIGIN}/plugins/:path*` },
           ];
         },
         devIndicators: {

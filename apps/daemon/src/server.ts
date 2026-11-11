@@ -1244,6 +1244,7 @@ import {
   renderPluginSharePrompt,
 } from './plugins/share-helpers.js';
 import { sanitizeArchiveFilename } from './projects/archive-filename.js';
+import { createAllowedOriginCors } from './http/cors-allowlist.js';
 import {
   isLoopbackHostname,
   isLoopbackPeerAddress,
@@ -3494,6 +3495,12 @@ export async function startServer({
     res.locals.projectPoweredPreview = projectPreviewDecision === 'allow';
     next();
   });
+
+  // Cross-origin deployments (web build served from another origin) need the
+  // response headers and the preflight answer the guard below never emits.
+  // Registered ahead of it so OPTIONS terminates here instead of falling
+  // through to a route that only handles GET/POST.
+  app.use('/api', createAllowedOriginCors(extraAllowedOrigins));
 
   // Reject cross-origin requests to API endpoints. Normal non-browser
   // clients (no Origin header) retain their existing access.
@@ -9882,9 +9889,10 @@ export async function startServer({
     paths: pathDeps,
     projects: { getProject: (id: string) => getProject(db, id) },
   });
-  app.use('/artifacts', express.static(ARTIFACTS_DIR));
+  app.use('/artifacts', createAllowedOriginCors(extraAllowedOrigins), express.static(ARTIFACTS_DIR));
   app.use(
     PLUGIN_PREVIEWS_ROUTE,
+    createAllowedOriginCors(extraAllowedOrigins),
     express.static(PLUGIN_PREVIEWS_DIR, { maxAge: '1d', immutable: false }),
   );
   registerDeployRoutes(app, {
@@ -9922,7 +9930,7 @@ export async function startServer({
     projectStore: projectStoreDeps,
     authorizeProjectRequest,
   });
-  app.use('/frames', express.static(FRAMES_DIR));
+  app.use('/frames', createAllowedOriginCors(extraAllowedOrigins), express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
     http: httpDeps,

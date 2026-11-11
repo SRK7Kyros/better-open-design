@@ -40,10 +40,12 @@ export const viewport: Viewport = {
 const themeInitScript = `(function(){document.documentElement.setAttribute('data-theme','light');try{var c=JSON.parse(localStorage.getItem('open-design:config')||'{}');var a=typeof c.accentColor==='string'&&/^#[0-9a-fA-F]{6}$/.test(c.accentColor.trim())?c.accentColor.trim().toLowerCase():'#353535';if(c.configMigrationVersion!==3&&(a==='#87ea5c'||a==='#c96442'))a='#353535';var s=document.documentElement.style;s.setProperty('--accent',a);s.setProperty('--accent-strong','color-mix(in srgb, '+a+' 82%, var(--text-strong))');s.setProperty('--accent-soft','color-mix(in srgb, '+a+' 12%, var(--bg-subtle))');s.setProperty('--accent-tint','color-mix(in srgb, '+a+' 6%, var(--bg-panel))');s.setProperty('--accent-hover','color-mix(in srgb, '+a+' 86%, var(--text-strong))');}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const apiBase = process.env.NEXT_PUBLIC_OD_API_BASE?.trim();
   return (
     <html lang='en' suppressHydrationWarning>
       {/* eslint-disable-next-line @next/next/no-sync-scripts */}
       <head>
+        {apiBase ? <meta name='od-api-base' content={apiBase} /> : null}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: intentional theme-init inline script to prevent FOUC */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
