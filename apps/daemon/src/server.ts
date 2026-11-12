@@ -8013,6 +8013,19 @@ export async function startServer({
     plugin: pluginsTeamList,
     skill: skillsTeamList,
   };
+  // A kind whose share transport is not configured in this deployment can
+  // never produce an authoritative listing (its service answers `configured:
+  // false` and throws for `authoritative`). Without this the 15s background
+  // pass retried those kinds forever — ~250 warnings in 20 minutes on a daemon
+  // with no team transport, and three futile scope reads per tick.
+  const teamResourceShareByKind = {
+    design_system: designSystemsTeamShare,
+    plugin: pluginsTeamShare,
+    skill: skillsTeamShare,
+  };
+  const teamResourceKindIsConfigured = (
+    resourceKind: keyof typeof teamResourceShareByKind,
+  ): boolean => teamResourceShareByKind[resourceKind].configured;
 
   // Collab realtime for design-system/plugin/skill "team resource" sharing: react
   // to a `team-resources-changed` signal (hub push, wired above, OR the
@@ -8251,6 +8264,7 @@ export async function startServer({
     reconcile: ({ resourceKind, scope, resources }) =>
       reconcileTeamResourceKind(resourceKind, scope, resources),
     emit: emitWorkspaceEvent,
+    isKindEnabled: teamResourceKindIsConfigured,
     onError: (error, resourceKind) =>
       console.warn(`[od] workspace-resources (${resourceKind}) refresh error:`, error),
   });
@@ -8343,6 +8357,7 @@ export async function startServer({
   // this re-reads on its own cadence. The coordinator derives a stable
   // id+version signature after materialization and suppresses unchanged emits.
   const teamResourcesPollTimer = setInterval(() => {
+    if (!RECONCILED_TEAM_RESOURCE_KINDS.some(teamResourceKindIsConfigured)) return;
     const rememberedLeases = rememberedTeamResourceScopes.activeWorkspaceLeases();
     const rememberedLeasesByWorkspace = new Map(
       rememberedLeases.map((lease) => [lease.workspaceId, lease]),

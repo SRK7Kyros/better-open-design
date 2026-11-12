@@ -567,6 +567,7 @@ describe('server.ts wiring (source boundary)', () => {
       'reconcileTeamResourceKind(resourceKind, scope, resources)',
     );
     expect(coordinatorBody).toContain('emit: emitWorkspaceEvent');
+    expect(coordinatorBody).toContain('isKindEnabled: teamResourceKindIsConfigured');
     const reconcileKindStart = source.indexOf(
       'const reconcileTeamResourceKind = async (',
     );
@@ -656,8 +657,22 @@ describe('server.ts wiring (source boundary)', () => {
     );
   });
 
-  it('never lets display cache readers infer scope from workspaceContext current or lastKnown', () => {
-    const projectsStart = source.indexOf('const teamProjectsForDisplay = async (');
+  it('skips the team-resource poll entirely when no share transport is configured', () => {
+    const timerStart = source.indexOf(
+      'const teamResourcesPollTimer = setInterval(() => {',
+    );
+    const timerEnd = source.indexOf('teamResourcesPollTimer.unref?.();', timerStart);
+    expect(timerStart).toBeGreaterThan(-1);
+    expect(timerEnd).toBeGreaterThan(timerStart);
+    const timerBody = source.slice(timerStart, timerEnd);
+    // A daemon with no team transport answered this tick with the same
+    // `authoritative ... unavailable` warning ~250 times in 20 minutes.
+    expect(timerBody).toContain(
+      'if (!RECONCILED_TEAM_RESOURCE_KINDS.some(teamResourceKindIsConfigured)) return;',
+    );
+  });
+
+  it('never lets display cache readers infer scope from workspaceContext current or lastKnown', () => {    const projectsStart = source.indexOf('const teamProjectsForDisplay = async (');
     const projectsEnd = source.indexOf('const teamProjectsForRequest = async (', projectsStart);
     const projectsBody = source.slice(projectsStart, projectsEnd);
     expect(projectsBody).not.toContain('workspaceContext.current');

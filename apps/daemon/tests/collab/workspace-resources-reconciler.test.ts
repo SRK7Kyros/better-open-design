@@ -285,6 +285,51 @@ describe('createWorkspaceTeamResourceEventCoordinator', () => {
     ]);
   });
 
+  it('skips a kind whose transport is not configured here instead of failing every tick', async () => {
+    const materializeAndList = vi.fn(
+      async (_input: { resourceKind: string }): Promise<readonly { resourceId: string }[]> => [],
+    );
+    const onError = vi.fn();
+    const coordinator = createWorkspaceTeamResourceEventCoordinator({
+      materializeAndList,
+      reconcile: async () => ({ retired: 0 }),
+      emit: vi.fn(),
+      onError,
+      isKindEnabled: (resourceKind) => resourceKind === 'skill',
+    });
+
+    await expect(
+      coordinator.refresh({ workspaceId: WORKSPACE_ID, scope, reason: 'poll' }),
+    ).resolves.toEqual({
+      processedKinds: ['skill'],
+      emittedKinds: [],
+      failedKinds: [],
+    });
+    expect(materializeAndList).toHaveBeenCalledTimes(1);
+    expect(materializeAndList.mock.calls[0]?.[0]?.resourceKind).toBe('skill');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('skips an explicitly requested kind that is not configured', async () => {
+    const materializeAndList = vi.fn(async () => []);
+    const coordinator = createWorkspaceTeamResourceEventCoordinator({
+      materializeAndList,
+      reconcile: async () => ({ retired: 0 }),
+      emit: vi.fn(),
+      isKindEnabled: () => false,
+    });
+
+    await expect(
+      coordinator.refresh({
+        workspaceId: WORKSPACE_ID,
+        scope,
+        resourceKind: 'plugin',
+        reason: 'push',
+      }),
+    ).resolves.toEqual({ processedKinds: [], emittedKinds: [], failedKinds: [] });
+    expect(materializeAndList).not.toHaveBeenCalled();
+  });
+
   it('ignores unknown kinds and does not emit after materialization or reconciliation failure', async () => {
     const emit = vi.fn();
     const coordinator = createWorkspaceTeamResourceEventCoordinator({

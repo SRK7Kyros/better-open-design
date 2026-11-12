@@ -263,6 +263,11 @@ export interface WorkspaceTeamResourceEventCoordinatorDeps<TScope> {
   emit: (workspaceId: string, payload: TeamResourcesChangedSsePayload) => void;
   now?: () => number;
   onError?: (error: unknown, resourceKind: WorkspaceTeamResourceKind) => void;
+  /**
+   * Whether this daemon can list `resourceKind` at all. Unconfigured kinds
+   * would fail on every background tick; they are skipped instead.
+   */
+  isKindEnabled?: (resourceKind: WorkspaceTeamResourceKind) => boolean;
 }
 
 function teamResourceSignature(resources: readonly MaterializedTeamResourceRef[]): string {
@@ -354,11 +359,12 @@ export function createWorkspaceTeamResourceEventCoordinator<TScope>(
 
   return {
     async refresh(input) {
-      const kinds = input.resourceKind === undefined
+      const kinds = (input.resourceKind === undefined
         ? TEAM_RESOURCE_KINDS
         : isWorkspaceTeamResourceKind(input.resourceKind)
           ? [input.resourceKind]
-          : [];
+          : [])
+        .filter((resourceKind) => deps.isKindEnabled?.(resourceKind) ?? true);
       const outcomes = await Promise.all(
         kinds.map(async (resourceKind) => ({
           resourceKind,
