@@ -32,17 +32,18 @@ describe('WorkingDirPicker on a hosted daemon', () => {
     openPanel();
 
     expect(screen.queryByTestId('working-dir-pick')).not.toBeNull();
-    expect(screen.queryByTestId('working-dir-server-only')).toBeNull();
+    expect(screen.queryByTestId('working-dir-server-note')).toBeNull();
   });
 
-  it('replaces the picker with an explanation when it cannot', () => {
-    // `openFolderDialog` answers null in this deployment, so a visible button
-    // would be a click that does nothing at all.
+  it('keeps the pick action and points at the daemon when it cannot open one', () => {
+    // `openFolderDialog` asks for a path on the daemon's machine instead of
+    // ending on an explanation, so the row must keep its action and label it.
     renderPicker({ pickerAvailable: false });
     openPanel();
 
-    expect(screen.queryByTestId('working-dir-pick')).toBeNull();
-    expect(screen.queryByTestId('working-dir-server-only')).not.toBeNull();
+    expect(screen.queryByTestId('working-dir-pick')).not.toBeNull();
+    expect(screen.queryByTestId('working-dir-server-note')?.textContent)
+      .toMatch(/daemon's machine/i);
   });
 
   it('still lists recent folders and lets the user clear the selection', () => {

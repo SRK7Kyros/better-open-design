@@ -1,17 +1,35 @@
+import { useEffect, useState } from 'react';
+
 import { useT } from '../i18n';
+import { fetchHostCapabilities } from '../runtime/host-capabilities';
 
 /**
- * 激活提示那一句(`.amr-login-activation__hint` 里的文字)。三处登录入口
- * (设置页 `AmrLoginPill`、首页 `CloudSignInTip`、引导页 `EntryShell`)共用同一份,
- * 免得一处改了另两处还留着旧话。
+ * The sentence under the activation link, shared by all three sign-in entry
+ * points (settings, home, onboarding), so a copy change lands everywhere at
+ * once.
  *
- * 浏览器没能自动打开时是产品《报错文案》S32a 那一格(OPEND-2849):
- * 标题「无法打开登录页面」+ 正文「浏览器未能自动打开，请重新尝试登录。」。
- * 下面那颗〔打开登录页〕链接由各入口自己画,不在这里 —— 只换文字,不动出口。
+ * `browserOpenFailed` is real only when the browser it tried to open is on the
+ * user's own desk. A hosted daemon runs `vela login` on the server, which has no
+ * browser to open, so it reports that flag on every single sign-in — and the
+ * "Couldn't open the sign-in page — please try signing in again" copy then sent
+ * people into a retry that could never succeed while the working link sat next
+ * to it. `GET /api/host-capabilities` is what separates the two deployments.
  */
 export function AmrActivationHintText({ browserOpenFailed }: { browserOpenFailed: boolean }) {
   const t = useT();
-  if (!browserOpenFailed) return <>{t('settings.amrActivationHint')}</>;
+  const [sameMachine, setSameMachine] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchHostCapabilities().then((capabilities) => {
+      if (!cancelled) setSameMachine(capabilities.sameMachine);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!browserOpenFailed || !sameMachine) return <>{t('settings.amrActivationHint')}</>;
   return (
     <>
       <span className="amr-login-activation__title">{t('settings.amrActivationBrowserFailedTitle')}</span>

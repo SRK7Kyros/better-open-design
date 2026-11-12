@@ -1544,6 +1544,12 @@ export interface Dict {
   'homeWorkingDir.missing': string;
   'homeWorkingDir.serverOnly': string;
   'homeWorkingDir.applyFailed': string;
+  'folderPath.title': string;
+  'folderPath.label': string;
+  'folderPath.placeholder': string;
+  'folderPath.hint': string;
+  'folderPath.invalid': string;
+  'folderPath.confirm': string;
   'workingDirPicker.title': string;
   'workingDirPicker.homeTitle': string;
   'workingDirPicker.processing': string;

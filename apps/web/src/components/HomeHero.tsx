@@ -1203,7 +1203,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     setProjectReferenceOpen(true);
   }
 
-  const linkLocalCodeAction = onPickLocalCodeDir && hostCapabilities?.folderPicker !== false
+  /* Hosted: no native picker, but `openFolderDialog` now asks for a server path. */
+  const linkLocalCodeAction = onPickLocalCodeDir
     ? () => {
         trackHomeChatComposerClick(analytics.track, {
           page_name: 'home',
@@ -2450,12 +2451,11 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           and the design system sits beside the type pill (per product:
           绿色 pill 后面跟设计系统 icon). */}
       <div className="home-hero__workdir-row">
-        {/* A hosted daemon cannot open a folder dialog on this desktop, and its
-            "recent folders" would be server paths. With nothing selected the row
-            is only a button that silently does nothing, so it is hidden; with a
-            directory already linked it stays, because that is the only way to
-            clear it. */}
-        {onPickWorkingDir && (hostCapabilities?.folderPicker !== false || workingDir) ? (
+        {/* A hosted daemon cannot open a folder dialog on this desktop, but the
+            working directory is still settable — the pick now asks for a path
+            on the daemon's machine instead of being a button that does nothing.
+            Hiding the row left the composer with no way to express it at all. */}
+        {onPickWorkingDir ? (
           <WorkingDirPicker
             className="home-hero__working-dir-picker"
             pickerAvailable={hostCapabilities?.folderPicker !== false}

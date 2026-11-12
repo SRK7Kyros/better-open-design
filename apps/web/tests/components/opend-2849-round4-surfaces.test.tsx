@@ -29,6 +29,7 @@ import { Reconnect } from '../../src/components/chat/Reconnect';
 import { UpgradeCard } from '../../src/components/chat/UpgradeCard';
 import { UpdateDialog } from '../../src/components/UpdateDialog';
 import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
+import { resetHostCapabilitiesCache } from '../../src/runtime/host-capabilities';
 import { I18nProvider } from '../../src/i18n';
 import type { AgentEvent, ChatMessage } from '../../src/types';
 
@@ -205,7 +206,8 @@ describe('S24 回合状态行(P0-24 已删除)', () => {
 });
 
 describe('S32a 登录时浏览器没打开', () => {
-  it('标题 + 正文,登录页链接保留', () => {
+  it('标题 + 正文,登录页链接保留', async () => {
+    resetHostCapabilitiesCache();
     zh(
       <AmrAccountControl
         status="signing-in"
@@ -215,7 +217,10 @@ describe('S32a 登录时浏览器没打开', () => {
         onSignIn={vi.fn()}
       />,
     );
-    expect(screen.getByText('无法打开登录页面')).toBeTruthy();
+    // `AmrActivationHintText` reads `GET /api/host-capabilities` first: this
+    // copy describes a browser on the user's own machine, so it waits for the
+    // probe (mount-time) rather than rendering synchronously.
+    expect(await screen.findByText('无法打开登录页面')).toBeTruthy();
     expect(screen.getByText('浏览器未能自动打开，请重新尝试登录。')).toBeTruthy();
     expect(screen.getByRole('link', { name: '打开登录页' })).toBeTruthy();
   });

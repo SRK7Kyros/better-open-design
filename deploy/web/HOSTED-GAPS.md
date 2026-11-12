@@ -153,6 +153,19 @@ import routes already accept a path string, so the picker is only sugar — the
 follow-up is to render that field when `folderPicker` is false rather than
 letting the action end at a message.
 
+**Resolved 2026-11-12.** `openFolderDialog` no longer ends at the explanation:
+without a native picker it calls `requestServerPath()` and the app answers with
+`ServerPathDialog` (mounted once at the shell root via `ServerPathDialogHost`).
+The dialog asks for an absolute path, refuses relative ones (they would resolve
+against the daemon's own cwd) and returns it through the same
+`await openFolderDialog()` contract, so all seven callsites gained the field
+without changing. The path is *not* validated against the daemon from there:
+`/api/dir-exists` is same-origin only, and a wrong path fails loudly on the
+create that consumes it. `WorkingDirPicker` and HomeHero stop hiding the entry
+when `folderPicker` is false — they keep the action and label it with
+`homeWorkingDir.serverOnly` — and the composer's "link local code" item is no
+longer suppressed.
+
 ## 6. Local-filesystem endpoints assumed one machine — fixed
 
 The UI offered operations whose subject lives on the daemon's disk. Two were
@@ -287,6 +300,36 @@ cost is amortised. Covered by `apps/daemon/tests/attempt-buckets.test.ts`.
 
 ---
 
+## 12. Desktop-shell affordances that ended in a dead end or a lie — fixed
+
+Three surfaces assumed the browser and the daemon sat on the same desk. Each
+failed in a way that blamed the user's machine rather than describing the
+deployment, and none of them is covered by §5/§8 because the daemon's answer was
+already correct — the client misread it.
+
+**External links navigated the app away.** `openExternalUrl` tried the host
+bridge, then `POST /api/system/open-external`, then `window.location.assign`.
+Hosted, the 501 from §8 made it take the last branch, so a docs link, a release
+page or an OAuth hand-off replaced the running workspace in the current tab.
+It now opens a tab (`window.open(url, '_blank')` + `opener = null`) and only
+navigates in place when the popup was actually blocked — the one case where
+leaving is better than doing nothing. `noopener` is applied by hand because the
+feature string makes `window.open` return `null` on success as well as on
+block, which removes the only signal a blocked popup gives.
+
+**Sign-in reported a browser failure that was the server's.** `vela login` runs
+on the host and tries to open a browser *there*; headless, it always reports
+`browserOpenFailed`. The shared hint rendered *"Couldn’t open the sign-in page —
+please try signing in again"* under an activation link that was right there, and
+retrying could never succeed. `AmrActivationHintText` no longer reports failure
+at all — it is only mounted when an activation URL exists, so the actionable
+state is always "open the link". `browserOpenFailed` still selects the
+loud "Open sign-in page" affordance in `CloudSignInTip`/`EntryShell`.
+
+**The working directory disappeared instead of being asked for.** With
+`folderPicker: false` the composer row was hidden entirely and the panel
+replaced its only action with a sentence. Both now offer the path field.
+
 ## What is verified working
 
 - CORS + preflight for `OD_ALLOWED_ORIGINS` on `/api`, `/artifacts`,
@@ -327,3 +370,15 @@ cost is amortised. Covered by `apps/daemon/tests/attempt-buckets.test.ts`.
   `403` — end to end against a real server
   (`apps/daemon/tests/host-capabilities.test.ts`), plus the full
   peer/host/origin matrix in `apps/daemon/tests/local-daemon-request.test.ts`.
+- The hosted folder-path dialog round-trips through `requestServerPath` into
+  `openFolderDialog` (`apps/web/tests/server-path-dialog.test.tsx`,
+  `apps/web/tests/open-folder-dialog-hosted.test.ts`): a typed path is
+  returned, a relative one is refused with the field still open, a second
+  concurrent request is answered `null` instead of stacking modals, and
+  `throwOnError` still throws on cancel.
+- `openExternalUrl` opens a tab on a 501 and on a network failure, calls the
+  daemon path when it answers `ok`, and reports failure only when the popup was
+  blocked (`apps/web/tests/open-external-url.test.ts`).
+- `WorkingDirPicker` keeps its pick action with `pickerAvailable={false}` and
+  labels it, instead of showing a sentence where the action was
+  (`apps/web/tests/working-dir-picker-hosted.test.tsx`).

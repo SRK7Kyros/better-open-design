@@ -179,22 +179,25 @@ export function WorkingDirPicker({
           role="menu"
           data-testid="working-dir-panel"
         >
-          {pickerAvailable ? (
-            <button
-              type="button"
-              role="menuitem"
-              className={styles.item}
-              data-testid="working-dir-pick"
-              onClick={() => {
-                setOpen(false);
-                onPickDirectory();
-              }}
-            >
-              <Icon name="folder-2" size={14} className={styles.itemIcon} />
-              <span>{workingDir ? t('homeWorkingDir.replace') : t('homeWorkingDir.pick')}</span>
-            </button>
-          ) : (
-            <p className={styles.serverOnly} data-testid="working-dir-server-only">
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.item}
+            data-testid="working-dir-pick"
+            onClick={() => {
+              setOpen(false);
+              onPickDirectory();
+            }}
+          >
+            <Icon name="folder-2" size={14} className={styles.itemIcon} />
+            <span>{workingDir ? t('homeWorkingDir.replace') : t('homeWorkingDir.pick')}</span>
+          </button>
+          {/* A hosted daemon cannot open the dialog on this desktop, but the
+              folder is still a valid answer — the action now asks for its path
+              in the app instead. Say what that path refers to, rather than
+              leaving a button with no explanation next to it. */}
+          {pickerAvailable ? null : (
+            <p className={styles.serverOnly} data-testid="working-dir-server-note">
               {t('homeWorkingDir.serverOnly')}
             </p>
           )}

@@ -1,8 +1,7 @@
 import { ReferralEntryProvider } from './components/ReferralEntry';
 import { WorkspaceRemovalBoundary } from './components/WorkspaceRemovalBoundary';
 import { homeAutoSendIdentity, type HomeRequestConcurrencyRejection } from './runtime/home-auto-send-identity';
-import { AmrConcurrencyDialog } from './components/AmrConcurrencyDialog';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AmrConcurrencyDialog } from './components/AmrConcurrencyDialog';import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Button } from '@open-design/components';
@@ -79,6 +78,7 @@ import { AmrArtifactUpgradeGate } from './components/AmrArtifactUpgradeGate';
 import { ExperienceSurvey } from './components/ExperienceSurvey';
 import { TooltipLayer } from './components/TooltipLayer';
 import { UpdateDialog } from './components/UpdateDialog';
+import { ServerPathDialogHost } from './components/ServerPathDialogHost';
 import { UpdaterPopup } from './components/UpdaterPopup';
 import {
   openWorkspaceTab,
@@ -6308,6 +6308,9 @@ function AppInner() {
       )}
       <TooltipLayer />
       <UpdateDialog />
+      {/* Answers the "type a path on the daemon's machine" request raised by
+          helpers that cannot render UI themselves (`openFolderDialog`). */}
+      <ServerPathDialogHost />
       {/* Mounted at shell level, outside the route views, so a survey armed by
           an export inside a project stays on screen when the user navigates
           back to home. */}

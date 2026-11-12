@@ -32,6 +32,7 @@ import {
   WORKSPACE_BILLING_REFRESH_EVENT,
   WORKSPACE_CONTEXT_REFRESH_EVENT,
 } from '../../src/collab/useWorkspaceContext';
+import { resetHostCapabilitiesCache } from '../../src/runtime/host-capabilities';
 
 const analyticsMocks = vi.hoisted(() => ({ track: vi.fn() }));
 
@@ -76,6 +77,7 @@ afterEach(() => {
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
+  resetHostCapabilitiesCache();
 });
 
 function renderPill(props: ComponentProps<typeof AmrLoginPill> = {}) {
@@ -148,7 +150,7 @@ describe('AmrAccountControl', () => {
     ).toBeNull();
   });
 
-  it('shows the browser-failed hint when vela could not open the browser', () => {
+  it('shows the browser-failed hint when vela could not open the browser', async () => {
     renderAccountControl({
       status: 'signing-in',
       compact: true,
@@ -158,7 +160,9 @@ describe('AmrAccountControl', () => {
     });
 
     // OPEND-2849 S32a:标题 + 正文两段;下面的登录页链接仍在。
-    expect(screen.getByText('Couldn’t open the sign-in page')).toBeTruthy();
+    // The copy is shown only where a browser really is on this machine
+    // (`GET /api/host-capabilities`), so the probe has to settle first.
+    expect(await screen.findByText('Couldn’t open the sign-in page')).toBeTruthy();
     expect(
       screen.getByText('Your browser didn’t open automatically. Please try signing in again.'),
     ).toBeTruthy();

@@ -1,4 +1,5 @@
 import { prepareAmrWebUrl } from "./amr-web-intent";
+import { requestServerPath, canRequestServerPath } from "../runtime/server-path-request";
 import {
   PUBLIC_FILE_MANUAL_REVOKE_REQUIRED,
   SHARE_ENTRY_INDEX_CONFLICT,
@@ -1469,14 +1470,42 @@ export async function openExternalUrl(url: string): Promise<boolean> {
       if (json?.ok === true) return true;
     }
   } catch {
-    // Fall through to current-tab navigation below.
+    // Fall through to opening the tab ourselves below.
   }
+  /* A hosted daemon answers 501 OPEN_EXTERNAL_UNAVAILABLE: the URL belongs in
+     *this* browser, not on the server's desktop. Opening a tab is the whole
+     behaviour — navigating the current one would throw away the app mid-task
+     (which is what `location.assign` used to do here). The popup may still be
+     blocked because the awaits above outlive the click gesture, and that is
+     the only case where navigating in place is better than doing nothing. */
+  if (openInNewTab(targetUrl)) return true;
   try {
     window.location.assign(targetUrl);
   } catch {
     return false;
   }
   return false;
+}
+
+/**
+ * `window.open(url, '_blank', 'noopener')` always returns null, which makes a
+ * blocked popup indistinguishable from a successful one. Opening without the
+ * feature string and clearing `opener` afterwards keeps that signal.
+ */
+function openInNewTab(url: string): boolean {
+  let win: Window | null = null;
+  try {
+    win = window.open(url, '_blank');
+  } catch {
+    return false;
+  }
+  if (!win) return false;
+  try {
+    win.opener = null;
+  } catch {
+    // Cross-origin window handles can refuse the assignment; the tab is open.
+  }
+  return true;
 }
 
 async function bridgeFirstPartyUrl(url: string): Promise<string | null> {
@@ -3503,7 +3532,16 @@ export async function renameProjectFile(
 export async function openFolderDialog(options: { throwOnError?: boolean } = {}): Promise<string | null> {
   const unavailable = 'This daemon runs on another machine: type the folder path on the server instead.';
   if (!(await fetchHostCapabilities()).folderPicker) {
-    if (options.throwOnError) throw new Error(unavailable);
+    /* The native dialog cannot be used, but the folder is still a legitimate
+       input: it just has to exist on the daemon's machine. Ask for it in the
+       app instead of ending the action on an explanation — this is the same
+       answer `useOpenFolderImport` gives with its manual-entry field, and it
+       keeps every caller's `await openFolderDialog()` contract unchanged. */
+    const typed = await requestServerPath({ hint: unavailable });
+    if (typed) return typed;
+    /* Dismissing the field is a cancel, not a failure: only report when there
+       was no way to ask at all (no dialog mounted, e.g. a unit-test render). */
+    if (options.throwOnError && !canRequestServerPath()) throw new Error(unavailable);
     return null;
   }
   try {

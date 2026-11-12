@@ -3858,7 +3858,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 });
                 setProjectReferenceOpen(true);
               }}
-              onLinkLocalCode={hostCapabilities?.folderPicker === false ? undefined : () => {
+              onLinkLocalCode={() => {
                 trackComposerBar({ element: 'plus_pick', resource_kind: 'workspace', resource_id: 'local-code' });
                 void handleLinkLocalCodeContext();
               }}
